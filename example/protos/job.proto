@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+package protos;
+option go_package = ".;protos";
+
+
+message Job {
+    // Id needs to be an id that is lexicographically sortable
+    // to ensure strict ordering for items with identical timestamps
+    string id = 1;
+    google.protobuf.Timestamp created_at = 2;
+    google.protobuf.Timestamp run_at = 3;
+    Data payload = 4;
+    string queue = 5;
+    repeated Transition transitions = 6;
+    string group = 7;
+    string external_id = 8;
+}
+
+message Result {
+    enum Status {
+        none = 0;
+
+        succeeded = 1;
+
+        failed = 2;
+    }
+
+    Status status = 1;
+    Data payload = 2;
+}
+
+message Error {
+    string msg = 1;
+    bool retryable = 2;
+}
+
+message Data {
+    string content_type = 1;
+    bytes body = 2;
+}
+
+message Transition {
+    enum State {
+        none = 0;
+
+        // The Job lives in the in-memory priority queue
+        queued = 1;
+
+        // The Job is waiting for execution by a worker
+        awaiting_execution = 2;
+
+        // The Job was claimed by a worker and is currently executing
+        executing = 3;
+
+        // The Job failed and is waiting to be retried
+        awaiting_retry = 4;
+
+        // The job has finished executing
+        finished = 5;
+    }
+
+    State state = 1;
+    google.protobuf.Timestamp time = 2;
+    google.protobuf.Timestamp retry_at = 3;
+    int32 attempts = 4;
+}

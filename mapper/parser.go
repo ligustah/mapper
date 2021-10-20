@@ -1,0 +1,250 @@
+package mapper
+
+import (
+	"errors"
+	"fmt"
+	"go/ast"
+	"go/doc"
+	"go/token"
+	"go/types"
+	"log"
+	"reflect"
+	"strings"
+
+	"golang.org/x/tools/go/packages"
+)
+
+type Parser struct{}
+
+func NewParser() *Parser {
+	return &Parser{}
+}
+
+func MustLookupType(name string) *GoType {
+	typ, err := LookupType(name)
+
+	if err != nil {
+		panic(fmt.Errorf("failed looking up type: %w", err))
+	}
+
+	return typ
+}
+
+func LookupType(name string) (*GoType, error) {
+	_, pkg, typeName, pointer, err := splitPackageAndType(name)
+
+	pkgs, err := packages.Load(&packages.Config{
+		Mode: packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
+	}, pkg)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if len(pkgs) != 1 {
+		return nil, fmt.Errorf("expected to find exactly one package '%s', found %d", pkg, len(pkgs))
+	}
+
+	obj := pkgs[0].Types.Scope().Lookup(typeName)
+
+	if obj == nil {
+		return nil, fmt.Errorf("symbol '%s' not found in package '%s'", typeName, pkg)
+	}
+
+	goType := getGoType(obj.Type())
+
+	if pointer {
+		return goType.pointer(), nil
+	}
+
+	return goType, nil
+}
+
+func (p *Parser) Parse(dir string, patterns ...string) ([]*GoInterface, error) {
+	pkgs, err := packages.Load(&packages.Config{
+		Mode: packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
+		Dir:  dir,
+	}, patterns...)
+
+	if err != nil {
+		return nil, err
+	}
+
+	var interfaces []*GoInterface
+	for _, pkg := range pkgs {
+		interfaces = append(interfaces, p.parsePackage(pkg)...)
+	}
+
+	return interfaces, nil
+}
+
+type interfaceDoc struct {
+	name  string
+	doc   string
+	funcs map[string]funcDoc
+}
+
+type funcDoc struct {
+	name string
+	doc  []string
+}
+
+func (p *Parser) parsePackage(pkg *packages.Package) []*GoInterface {
+	defs := pkg.TypesInfo.Defs
+
+	// extract doc comments for all interface types
+	docs, err := p.getDocComments(pkg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// go through all definitions and find the interface types we care about
+	var interfaces []*GoInterface
+	for _, object := range defs {
+		if object == nil {
+			continue
+		}
+
+		switch typ := object.Type().(type) {
+		case *types.Named:
+			if iface, ok := typ.Underlying().(*types.Interface); ok {
+				interfaceDocs := docs[typ.Obj().Name()]
+
+				if strings.TrimSpace(interfaceDocs.doc) == "mapper:generate" {
+					goIface := &GoInterface{
+						Name: typ.Obj().Name(),
+						Pkg:  typ.Obj().Pkg().Path(),
+						Type: iface,
+					}
+
+					for i := 0; i < iface.NumMethods(); i++ {
+						method := iface.Method(i)
+						goFunc, err := p.getGoFunction(method, interfaceDocs.funcs[method.Name()])
+						if err != nil {
+							log.Fatal(err)
+						}
+
+						goIface.Methods = append(goIface.Methods, goFunc)
+					}
+
+					interfaces = append(interfaces, goIface)
+				}
+			}
+		}
+	}
+
+	return interfaces
+}
+
+func (p *Parser) getGoFunction(method *types.Func, f funcDoc) (*GoFunction, error) {
+	// method type is always *types.Signature
+	signature := method.Type().(*types.Signature)
+	goFunc := &GoFunction{
+		name:    method.Name(),
+		options: map[string]*FieldOptions{},
+	}
+
+	params := signature.Params()
+	for p := 0; p < params.Len(); p++ {
+		param := params.At(p)
+		goFunc.inputs = append(goFunc.inputs, &GoParameter{
+			name: param.Name(),
+			typ:  getGoType(param.Type()),
+		})
+	}
+
+	results := signature.Results()
+	if results.Len() != 1 && results.Len() != 2 {
+		return nil, fmt.Errorf("only support one or two return values, got %d", results.Len())
+	}
+
+	goFunc.output = getGoType(results.At(0).Type())
+
+	if results.Len() > 1 {
+		lastReturnValue := results.At(1)
+
+		if named, ok := lastReturnValue.Type().(*types.Named); ok && named.Obj().Name() == "error" {
+			goFunc.hasError = true
+		} else {
+			return nil, fmt.Errorf("only support second return value of type error")
+		}
+	}
+
+	// parse all comments for options
+	for _, s := range f.doc {
+		trimmed := strings.TrimSpace(s)
+
+		const fieldPrefix = "// field:"
+		if strings.HasPrefix(trimmed, fieldPrefix) {
+			parts := strings.SplitN(strings.TrimPrefix(trimmed, fieldPrefix), " ", 2)
+
+			if len(parts) > 1 {
+				fieldName := parts[0]
+				tag := reflect.StructTag(parts[1])
+
+				goFunc.options[fieldName] = &FieldOptions{
+					from: tag.Get("from"),
+				}
+			}
+		}
+	}
+
+	if len(goFunc.inputs) > 1 {
+		for _, input := range goFunc.inputs {
+			if input.name == "" {
+				return nil, errors.New("input parameters need to be named, when there is more than one")
+			}
+		}
+	}
+
+	return goFunc, nil
+}
+
+func (p *Parser) getDocComments(pkg *packages.Package) (map[string]interfaceDoc, error) {
+	docPkg, err := doc.NewFromFiles(pkg.Fset, pkg.Syntax, pkg.PkgPath)
+	if err != nil {
+		return nil, err
+	}
+
+	interfaceDocs := make(map[string]interfaceDoc)
+
+	for _, t := range docPkg.Types {
+		if t.Decl.Tok == token.TYPE {
+			if len(t.Decl.Specs) == 1 {
+				spec := t.Decl.Specs[0]
+
+				if typeSpec, ok := spec.(*ast.TypeSpec); ok {
+					if iface, ok := typeSpec.Type.(*ast.InterfaceType); ok {
+						ifaceDoc := interfaceDoc{
+							name:  t.Name,
+							doc:   t.Doc,
+							funcs: map[string]funcDoc{},
+						}
+
+						for _, method := range iface.Methods.List {
+							if len(method.Names) != 1 {
+								continue
+							}
+
+							fDoc := funcDoc{
+								name: method.Names[0].Name,
+							}
+
+							if method.Doc != nil {
+								for _, comment := range method.Doc.List {
+									fDoc.doc = append(fDoc.doc, comment.Text)
+								}
+							}
+
+							ifaceDoc.funcs[fDoc.name] = fDoc
+						}
+
+						interfaceDocs[ifaceDoc.name] = ifaceDoc
+					}
+				}
+			}
+		}
+	}
+
+	return interfaceDocs, nil
+}
