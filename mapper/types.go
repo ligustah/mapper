@@ -3,6 +3,7 @@ package mapper
 import (
 	"errors"
 	"fmt"
+	"go/token"
 	"go/types"
 	"path"
 	"strings"
@@ -11,7 +12,14 @@ import (
 )
 
 var (
-	StringType = getGoType(types.Typ[types.String])
+	StringType        = getGoType(types.Typ[types.String])
+	IsZeroerInterface = types.NewInterfaceType([]*types.Func{
+		types.NewFunc(token.NoPos, types.NewPackage("", ""), "IsZero",
+			types.NewSignatureType(nil, nil, nil, nil,
+				types.NewTuple(types.NewVar(token.NoPos, types.NewPackage("", ""), "", types.Typ[types.Bool])),
+				false),
+		),
+	}, nil)
 )
 
 type GeneratorFunc func(ctx *FunctionContext, input jen.Code) jen.Code
@@ -224,6 +232,14 @@ func (g *GoType) zero() *jen.Statement {
 	//panic("cannot get zero value")
 }
 
+func (g *GoType) isZero() *jen.Statement {
+	if types.Implements(g.Raw, IsZeroerInterface) {
+		return jen.Dot("IsZero").Call()
+	}
+
+	return jen.Op("==").Add(g.zero())
+}
+
 func (g *GoType) qual() *jen.Statement {
 	return jen.Qual(g.Pkg, g.Name)
 }
@@ -328,6 +344,7 @@ func getGoType(typ types.Type) *GoType {
 		}
 	case *types.Basic:
 		out.Kind = BasicKind
+		out.BasicInfo = u.Info()
 		out.Name = u.Name()
 	case *types.Slice:
 		// this is a named slice type, let's just pretend it's the actual slice

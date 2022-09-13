@@ -1,6 +1,10 @@
 package mapper
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/dave/jennifer/jen"
+)
 
 func init() {
 	var nullMappers []*TypeMapping
@@ -39,7 +43,18 @@ func init() {
 				from: nullType.typ,
 				to:   n,
 			},
-			generator: functionConverter("github.com/volatiletech/null", fmt.Sprintf("%sFrom", nullType.name), false),
+			generator: func(typ m) GeneratorFunc {
+				return func(ctx *FunctionContext, input jen.Code) jen.Code {
+					f := functionConverter("github.com/volatiletech/null", fmt.Sprintf("New%s", typ.name), false)
+
+					tmp := ctx.tmpVar()
+					ctx.add(jen.Id(tmp).Op(":=").Add(input).Line())
+
+					isValid := jen.Op("!").Parens(jen.Id(tmp).Add(typ.typ.isZero()))
+
+					return f(ctx, jen.List(jen.Id(tmp), isValid))
+				}
+			}(nullType),
 		})
 
 		nullMappers = append(nullMappers, &TypeMapping{
