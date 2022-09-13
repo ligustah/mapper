@@ -24,16 +24,18 @@ func (m MapperImpl) MapJob(job *models.Job) *protos.Job {
 }
 
 func (m MapperImpl) MapJobReverse(job *protos.Job) *models.Job {
+	tmp0 := job.Group
+	tmp1 := job.ExternalId
 
 	return &models.Job{
 		ID:         job.Id,
 		CreatedAt:  job.CreatedAt.AsTime(),
 		RunAt:      job.RunAt.AsTime(),
-		Group:      null.StringFrom(job.Group),
+		Group:      null.NewString(tmp0, !(tmp0 == "")),
 		Queue:      job.Queue,
 		DataType:   job.Payload.ContentType,
 		Data:       job.Payload.Body,
-		ExternalID: null.StringFrom(job.ExternalId),
+		ExternalID: null.NewString(tmp1, !(tmp1 == "")),
 	}
 }
 
@@ -50,7 +52,7 @@ func (m MapperImpl) MapTransition(transition *models.Transition) (*protos.Transi
 	if val, ok := protos.Transition_State_value[transition.State]; ok {
 		tmp0 = protos.Transition_State(val)
 	} else {
-		return nil, fmt.Errorf("invalid integer value for enum Transition_State: %d", transition.State)
+		return nil, fmt.Errorf("invalid string value for enum Transition_State: %s", transition.State)
 	}
 
 	return &protos.Transition{
@@ -66,14 +68,16 @@ func (m MapperImpl) TransitionProtoToModel(transition *protos.Transition) (*mode
 	if str, ok := protos.Transition_State_name[int32(transition.State)]; ok {
 		tmp0 = str
 	} else {
-		return nil, fmt.Errorf("invalid string value for enum Transition_State: %d", transition.State)
+		return nil, fmt.Errorf("invalid integer value for enum Transition_State: %d", transition.State)
 	}
+
+	tmp1 := transition.RetryAt.AsTime()
 
 	return &models.Transition{
 		CreatedAt: transition.Time.AsTime(),
 		State:     tmp0,
 		Attempts:  int(transition.Attempts),
-		RetryAt:   null.TimeFrom(transition.RetryAt.AsTime()),
+		RetryAt:   null.NewTime(tmp1, !(tmp1.IsZero())),
 	}, nil
 }
 
