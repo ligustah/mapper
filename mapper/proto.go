@@ -52,7 +52,7 @@ func registerProtoEnum(generator *Generator, enum *GoType) {
 				}).BlockFunc(func(group *jen.Group) {
 					group.Id(tmp).Op("=").Id("str")
 				}).Else().BlockFunc(func(group *jen.Group) {
-					fmtString := jen.Lit(fmt.Sprintf("invalid string value for enum %s: %%d", enum.Name))
+					fmtString := jen.Lit(fmt.Sprintf("invalid integer value for enum %s: %%d", enum.Name))
 
 					group.Return(ctx.targetType.zero(), jen.Qual("fmt", "Errorf").Call(fmtString, input))
 				}).Line().Line())
@@ -79,7 +79,7 @@ func registerProtoEnum(generator *Generator, enum *GoType) {
 				}).BlockFunc(func(group *jen.Group) {
 					group.Id(tmp).Op("=").Add(enum.qual()).Parens(jen.Id("val"))
 				}).Else().BlockFunc(func(group *jen.Group) {
-					fmtString := jen.Lit(fmt.Sprintf("invalid integer value for enum %s: %%d", enum.Name))
+					fmtString := jen.Lit(fmt.Sprintf("invalid string value for enum %s: %%s", enum.Name))
 
 					group.Return(ctx.targetType.zero(), jen.Qual("fmt", "Errorf").Call(fmtString, input))
 				}).Line().Line())
