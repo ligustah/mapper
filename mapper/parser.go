@@ -31,7 +31,7 @@ func MustLookupType(name string) *GoType {
 }
 
 func LookupType(name string) (*GoType, error) {
-	_, pkg, typeName, pointer, err := splitPackageAndType(name)
+	_, pkg, typeName, _, pointer, err := splitPackageAndType(name)
 
 	pkgs, err := packages.Load(&packages.Config{
 		Mode: packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
@@ -98,7 +98,6 @@ func (p *Parser) parsePackage(pkg *packages.Package) []*GoInterface {
 		log.Fatal(err)
 	}
 
-	// go through all definitions and find the interface types we care about
 	var interfaces []*GoInterface
 	for _, object := range defs {
 		if object == nil {
@@ -182,9 +181,12 @@ func (p *Parser) getGoFunction(method *types.Func, f funcDoc) (*GoFunction, erro
 				fieldName := parts[0]
 				tag := reflect.StructTag(parts[1])
 
-				goFunc.options[fieldName] = &FieldOptions{
-					from: tag.Get("from"),
+				if _, ok := goFunc.options[fieldName]; !ok {
+					goFunc.options[fieldName] = &FieldOptions{}
 				}
+
+				goFunc.options[fieldName].from = tag.Get("from")
+				goFunc.options[fieldName].using = tag.Get("using")
 			}
 		}
 	}

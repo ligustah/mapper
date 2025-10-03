@@ -1,7 +1,10 @@
 package mapper
 
 import (
+	"fmt"
 	"go/types"
+	"reflect"
+	"runtime"
 
 	"github.com/dave/jennifer/jen"
 )
@@ -131,4 +134,72 @@ func mapStringToNumeric(typ *types.Basic, parser string, bitSize int) GeneratorF
 
 		return tmp
 	}
+}
+
+type ConverterFunc[IN any, OUT any] interface {
+	~func(IN) OUT | ~func(IN) (OUT, error)
+}
+
+// RegisterCustomMapper allows users to register their own custom mapping functions.
+// The customMapperFunc must be a function with one input parameter and either one return value
+// or two return values (where the second is an error).
+func RegisterCustomMapper[IN any, OUT any, Fn ConverterFunc[IN, OUT]](customMapperFunc Fn) {
+	in := *(new(IN))
+	out := *(new(OUT))
+
+	// we need to get to the underlying type, but preserve the pointer for the lookup later on
+	inPtr := ""
+	inTyp := reflect.TypeOf(in)
+	for inTyp.Kind() == reflect.Ptr {
+		inTyp = inTyp.Elem()
+		inPtr += "*"
+	}
+
+	outPtr := ""
+	outTyp := reflect.TypeOf(out)
+	for outTyp.Kind() == reflect.Ptr {
+		outTyp = outTyp.Elem()
+		outPtr += "*"
+	}
+
+	fnValue := reflect.ValueOf(customMapperFunc)
+	fnType := fnValue.Type()
+
+	fromTypeStr := fmt.Sprintf("%s%s.%s", inPtr, inTyp.PkgPath(), inTyp.Name())
+	toTypeStr := fmt.Sprintf("%s%s.%s", outPtr, outTyp.PkgPath(), outTyp.Name())
+
+	from, err := LookupType(fromTypeStr)
+	if err != nil {
+		panic(fmt.Errorf("failed to lookup fromType %s: %w", fromTypeStr, err))
+	}
+
+	to, err := LookupType(toTypeStr)
+	if err != nil {
+		panic(fmt.Errorf("failed to lookup toType %s: %w", toTypeStr, err))
+	}
+
+	hasError := fnType.NumOut() == 2
+
+	fnc := runtime.FuncForPC(fnValue.Pointer())
+
+	_, pkgPath, typeName, methodName, _, err := splitPackageAndType(fnc.Name())
+	if err != nil {
+		panic(err)
+	}
+
+	var fn GeneratorFunc
+	if methodName == "" {
+		fn = functionConverter(pkgPath, typeName, hasError)
+	} else {
+		fn = methodConverter(methodName, to, hasError)
+	}
+
+	registerTypeMappings(&TypeMapping{
+		types: TypePair{
+			from: from,
+			to:   to,
+		},
+		generator: fn,
+		canFail:   hasError,
+	})
 }

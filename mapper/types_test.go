@@ -48,7 +48,7 @@ func Test_splitPackageAndType(t *testing.T) {
 	}
 	for i, tt := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			gotCanonical, gotPkg, gotTypeName, gotPointer, err := splitPackageAndType(tt.name)
+			gotCanonical, gotPkg, gotTypeName, _, gotPointer, err := splitPackageAndType(tt.name)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("splitPackageAndType() error = %v, wantErr %v", err, tt.wantErr)
 				return

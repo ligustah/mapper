@@ -133,7 +133,8 @@ type GoParameter struct {
 }
 
 type FieldOptions struct {
-	from string
+	from  string
+	using string
 }
 
 type GoKind int
@@ -256,7 +257,7 @@ func (g *GoType) pointer() *GoType {
 	}
 }
 
-func splitPackageAndType(name string) (canonical string, pkg string, typeName string, pointer bool, err error) {
+func splitPackageAndType(name string) (canonical string, pkg string, typeName, methodName string, pointer bool, err error) {
 	trimmed := strings.TrimSpace(name)
 
 	if len(trimmed) == 0 {
@@ -271,15 +272,37 @@ func splitPackageAndType(name string) (canonical string, pkg string, typeName st
 		trimmed = trimmed[1:]
 	}
 
-	base := path.Base(trimmed)
+	parent, base := path.Split(trimmed)
 	parts := strings.Split(base, ".")
-	if len(parts) != 2 {
+
+	switch len(parts) {
+	// this is a type
+	case 2:
+		typeName = parts[1]
+
+	// this is a method on a type
+	case 3:
+		// typeName would be something like (*Type) or (Type)
+		typeName = parts[1]
+		if len(typeName) <= 3 || typeName[0] != '(' || typeName[len(typeName)-1] != ')' {
+			err = errors.New("expected method name to be enclosed in parentheses")
+			return
+		}
+
+		typeName = typeName[1 : len(typeName)-1]
+
+		if typeName[0] == '*' {
+			pointer = true
+			typeName = typeName[1:]
+		}
+
+		methodName = parts[2]
+
+	default:
 		err = errors.New("expected package and type Name separated by period")
-		return
 	}
 
-	typeName = parts[1]
-	pkg = trimmed[:len(trimmed)-len(typeName)-1]
+	pkg = path.Join(parent, parts[0])
 
 	return
 }

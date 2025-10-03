@@ -2,33 +2,42 @@ package mapper
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/dave/jennifer/jen"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func init() {
-	var protoMappers []*TypeMapping
+	//var protoMappers []*TypeMapping
+	//
+	//goTime := MustLookupType("time.Time")
+	//pbTime := MustLookupType("*google.golang.org/protobuf/types/known/timestamppb.Timestamp")
+	//
+	//protoMappers = append(protoMappers, &TypeMapping{
+	//	types: TypePair{
+	//		from: goTime,
+	//		to:   pbTime,
+	//	},
+	//	generator: functionConverter("google.golang.org/protobuf/types/known/timestamppb", "New", false),
+	//})
+	//
+	//protoMappers = append(protoMappers, &TypeMapping{
+	//	types: TypePair{
+	//		from: pbTime,
+	//		to:   goTime,
+	//	},
+	//	generator: methodConverter("AsTime", pbTime, false),
+	//})
+	//
+	//registerTypeMappings(protoMappers...)
 
-	goTime := MustLookupType("time.Time")
-	pbTime := MustLookupType("*google.golang.org/protobuf/types/known/timestamppb.Timestamp")
+	RegisterCustomMapper[*timestamppb.Timestamp, time.Time]((*timestamppb.Timestamp).AsTime)
+	RegisterCustomMapper[time.Time, *timestamppb.Timestamp](timestamppb.New)
 
-	protoMappers = append(protoMappers, &TypeMapping{
-		types: TypePair{
-			from: goTime,
-			to:   pbTime,
-		},
-		generator: functionConverter("google.golang.org/protobuf/types/known/timestamppb", "New", false),
-	})
-
-	protoMappers = append(protoMappers, &TypeMapping{
-		types: TypePair{
-			from: pbTime,
-			to:   goTime,
-		},
-		generator: methodConverter("AsTime", pbTime, false),
-	})
-
-	registerTypeMappings(protoMappers...)
+	RegisterCustomMapper[*durationpb.Duration, time.Duration]((*durationpb.Duration).AsDuration)
+	RegisterCustomMapper[time.Duration, *durationpb.Duration](durationpb.New)
 }
 
 func registerProtoEnum(generator *Generator, enum *GoType) {

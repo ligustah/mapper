@@ -1,6 +1,7 @@
 package mapper
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"go/types"
@@ -166,7 +167,22 @@ func (m *Generator) buildMapping(f *GoFunction) ([]*ResolvedMapping, error) {
 		}
 
 		if mapping == nil {
-			//continue
+			// If no custom mapper was used and no direct mapping found, try buildGenerator
+			for _, input := range f.inputs {
+				generator, canFail := m.buildGenerator(input.typ, field.typ)
+				if generator != nil {
+					mapping = &ResolvedMapping{
+						output:    field,
+						input:     jen.Id(input.name),
+						generator: generator,
+						canFail:   canFail,
+					}
+					break
+				}
+			}
+		}
+
+		if mapping == nil {
 			return nil, fmt.Errorf("could not find source for output %s", field.name)
 		}
 
@@ -314,6 +330,16 @@ func (m *Generator) generateMethod(mapperName string, f *GoFunction) error {
 	m.file.Add(function)
 
 	return nil
+}
+
+func (m *Generator) String() (string, error) {
+	buf := new(bytes.Buffer)
+	err := m.file.Render(buf)
+	if err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
 }
 
 func (m *Generator) Render() {

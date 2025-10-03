@@ -1,13 +1,5 @@
 package mapper
 
-import (
-	"testing"
-)
-
-func testGenerator2(t *testing.T, gen GeneratorFunc) {
-	t.Helper()
-}
-
 //
 //func Test_strconvMappers(t *testing.T) {
 //	targetType := &GoType{
