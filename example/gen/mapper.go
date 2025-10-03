@@ -2,7 +2,6 @@ package gen
 
 import (
 	"fmt"
-
 	example "github.com/ligustah/mapper/example"
 	models "github.com/ligustah/mapper/example/models"
 	protos "github.com/ligustah/mapper/example/protos"

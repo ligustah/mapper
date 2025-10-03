@@ -10,29 +10,6 @@ import (
 )
 
 func init() {
-	//var protoMappers []*TypeMapping
-	//
-	//goTime := MustLookupType("time.Time")
-	//pbTime := MustLookupType("*google.golang.org/protobuf/types/known/timestamppb.Timestamp")
-	//
-	//protoMappers = append(protoMappers, &TypeMapping{
-	//	types: TypePair{
-	//		from: goTime,
-	//		to:   pbTime,
-	//	},
-	//	generator: functionConverter("google.golang.org/protobuf/types/known/timestamppb", "New", false),
-	//})
-	//
-	//protoMappers = append(protoMappers, &TypeMapping{
-	//	types: TypePair{
-	//		from: pbTime,
-	//		to:   goTime,
-	//	},
-	//	generator: methodConverter("AsTime", pbTime, false),
-	//})
-	//
-	//registerTypeMappings(protoMappers...)
-
 	RegisterCustomMapper[*timestamppb.Timestamp, time.Time]((*timestamppb.Timestamp).AsTime)
 	RegisterCustomMapper[time.Time, *timestamppb.Timestamp](timestamppb.New)
 
