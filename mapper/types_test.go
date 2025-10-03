@@ -7,12 +7,13 @@ import (
 
 func Test_splitPackageAndType(t *testing.T) {
 	tests := []struct {
-		name          string
-		wantCanonical string
-		wantPkg       string
-		wantTypeName  string
-		wantPointer   bool
-		wantErr       bool
+		name           string
+		wantCanonical  string
+		wantPkg        string
+		wantTypeName   string
+		wantMethodName string
+		wantPointer    bool
+		wantErr        bool
 	}{
 		{
 			name:          "*google.golang.org/protobuf/types/known/timestamppb.Timestamp",
@@ -35,6 +36,30 @@ func Test_splitPackageAndType(t *testing.T) {
 			wantPointer:   true,
 		},
 		{
+			name:           "time.(*Time).String",
+			wantCanonical:  "time.(*Time).String",
+			wantPkg:        "time",
+			wantTypeName:   "Time",
+			wantMethodName: "String",
+			wantPointer:    true,
+		},
+		{
+			name:           "time.(Time).String",
+			wantCanonical:  "time.(Time).String",
+			wantPkg:        "time",
+			wantTypeName:   "Time",
+			wantMethodName: "String",
+			wantPointer:    false,
+		},
+		{
+			name:    "*time.Time.String",
+			wantErr: true,
+		},
+		{
+			name:    "time.Time.String.Foo",
+			wantErr: true,
+		},
+		{
 			name:    "*google.golang.org/protobuf/types/known/timestamppb",
 			wantErr: true,
 		},
@@ -48,7 +73,7 @@ func Test_splitPackageAndType(t *testing.T) {
 	}
 	for i, tt := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			gotCanonical, gotPkg, gotTypeName, _, gotPointer, err := splitPackageAndType(tt.name)
+			gotCanonical, gotPkg, gotTypeName, gotMethodName, gotPointer, err := splitPackageAndType(tt.name)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("splitPackageAndType() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -67,6 +92,9 @@ func Test_splitPackageAndType(t *testing.T) {
 			}
 			if gotTypeName != tt.wantTypeName {
 				t.Errorf("splitPackageAndType() gotTypeName = %v, want %v", gotTypeName, tt.wantTypeName)
+			}
+			if gotMethodName != tt.wantMethodName {
+				t.Errorf("splitPackageAndType() gotMethodName = %v, want %v", gotMethodName, tt.wantMethodName)
 			}
 			if gotPointer != tt.wantPointer {
 				t.Errorf("splitPackageAndType() gotPointer = %v, want %v", gotPointer, tt.wantPointer)
