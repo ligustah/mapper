@@ -369,13 +369,36 @@ func getGoType(typ types.Type) *GoType {
 				continue
 			}
 
-			goField := &GoField{
-				name: field.Name(),
-				typ:  getGoType(field.Type()),
-				raw:  field,
+			// handle embedded (anonymous) fields by flattening their fields
+			if field.Anonymous() {
+				embeddedType := getGoType(field.Type())
+				// flatten embedded struct fields
+				if embeddedType.Kind == StructKind {
+					for _, embeddedField := range embeddedType.Fields {
+						out.Fields = append(out.Fields, embeddedField)
+					}
+				} else if embeddedType.Kind == PointerKind && embeddedType.Element != nil && embeddedType.Element.Kind == StructKind {
+					// handle pointer to embedded struct
+					for _, embeddedField := range embeddedType.Element.Fields {
+						out.Fields = append(out.Fields, embeddedField)
+					}
+				} else {
+					// non-struct embedded field, add as regular field
+					goField := &GoField{
+						name: field.Name(),
+						typ:  embeddedType,
+						raw:  field,
+					}
+					out.Fields = append(out.Fields, goField)
+				}
+			} else {
+				goField := &GoField{
+					name: field.Name(),
+					typ:  getGoType(field.Type()),
+					raw:  field,
+				}
+				out.Fields = append(out.Fields, goField)
 			}
-
-			out.Fields = append(out.Fields, goField)
 		}
 	case *types.Basic:
 		out.Kind = BasicKind
