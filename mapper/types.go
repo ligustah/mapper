@@ -206,6 +206,14 @@ func (g *GoType) getField(name string) *GoField {
 		fields = g.Element.Fields
 	}
 
+	// first pass: look for exact match
+	for _, field := range fields {
+		if field.name == name {
+			return field
+		}
+	}
+
+	// second pass: case-insensitive match
 	for _, field := range fields {
 		if strings.ToLower(field.name) == strings.ToLower(name) {
 			return field
