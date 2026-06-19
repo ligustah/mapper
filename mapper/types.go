@@ -217,20 +217,22 @@ func (g *GoType) zero() *jen.Statement {
 	if g.Kind == BasicKind {
 		info := g.BasicInfo
 
-		if info&types.IsInteger != 0 || info&types.IsComplex != 0 {
+		if info&types.IsInteger != 0 {
 			return jen.Lit(0)
 		} else if info&types.IsFloat != 0 {
 			return jen.Lit(0.0)
+		} else if info&types.IsComplex != 0 {
+			return jen.Lit(0)
 		} else if info&types.IsString != 0 {
 			return jen.Lit("")
 		} else if info&types.IsBoolean != 0 {
 			return jen.Lit(false)
 		}
+		// fallback for other basic types (shouldn't happen in practice)
+		return jen.Lit(0)
 	}
 
 	return jen.Qual(g.Pkg, g.Name).Values()
-
-	//panic("cannot get zero value")
 }
 
 func (g *GoType) isZero() *jen.Statement {
