@@ -83,3 +83,131 @@ func (m MapperImpl) TransitionProtoToModel(transition *protos.Transition) (*mode
 type MapperImpl struct{}
 
 var _ example.Mapper = (*MapperImpl)(nil)
+
+func (m AdvancedMapperImpl) MapArrayExample(src *models.ArrayExample) *protos.ArrayExampleProto {
+
+	return &protos.ArrayExampleProto{
+		ID:   src.ID,
+		Data: src.Data,
+		Name: src.Name,
+	}
+}
+
+func (m AdvancedMapperImpl) MapArrayExampleReverse(src *protos.ArrayExampleProto) *models.ArrayExample {
+
+	return &models.ArrayExample{
+		ID:   src.ID,
+		Data: src.Data,
+		Name: src.Name,
+	}
+}
+
+func (m AdvancedMapperImpl) MapCustomConvert(src *models.CustomConvertExample) *protos.CustomConvertExampleProto {
+
+	return &protos.CustomConvertExampleProto{
+		ID:        src.ID,
+		Value:     src.Value,
+		Timestamp: example.ConvertTimestamp(src.Timestamp),
+	}
+}
+
+func (m AdvancedMapperImpl) MapCustomConvertReverse(src *protos.CustomConvertExampleProto) (*models.CustomConvertExample, error) {
+	tmp0, err := example.ParseTimestamp(src.Timestamp)
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.CustomConvertExample{
+		ID:        src.ID,
+		Value:     src.Value,
+		Timestamp: tmp0,
+	}, nil
+}
+
+func (m AdvancedMapperImpl) MapNamedSlice(src *models.NamedSliceExample) *protos.NamedSliceExampleProto {
+
+	return &protos.NamedSliceExampleProto{
+		ID:    src.ID,
+		Items: src.Items,
+	}
+}
+
+func (m AdvancedMapperImpl) MapNamedSliceReverse(src *protos.NamedSliceExampleProto) *models.NamedSliceExample {
+
+	return &models.NamedSliceExample{
+		ID:    src.ID,
+		Items: src.Items,
+	}
+}
+
+func (m AdvancedMapperImpl) MapUser(user *models.User) *protos.UserProto {
+
+	return &protos.UserProto{
+		ID:        user.ID,
+		Name:      user.Name,
+		Email:     user.Email,
+		Age:       int32(user.Age),
+		CreatedAt: example.FormatTime(user.CreatedAt),
+	}
+}
+
+func (m AdvancedMapperImpl) MapUserReverse(user *protos.UserProto) (*models.User, error) {
+	tmp0, err := example.ParseTime(user.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &models.User{
+		ID:        user.ID,
+		Name:      user.Name,
+		Email:     user.Email,
+		Age:       int(user.Age),
+		CreatedAt: tmp0,
+	}, nil
+}
+
+func (m AdvancedMapperImpl) MapUserWithRoles(user *models.UserWithRoles) *protos.UserWithRolesProto {
+	tmp0 := make([]int32, len(user.Scores))
+	for i := range user.Scores {
+		tmp0[i] = int32(user.Scores[i])
+	}
+
+	tmp1 := make(map[string]int64)
+	for k, v := range user.Metadata {
+		tmp1[k] = int64(v)
+	}
+
+	return &protos.UserWithRolesProto{
+		ID:       user.ID,
+		Name:     user.Name,
+		Roles:    user.Roles,
+		Tags:     user.Tags,
+		Scores:   tmp0,
+		Metadata: tmp1,
+	}
+}
+
+func (m AdvancedMapperImpl) MapUserWithRolesReverse(user *protos.UserWithRolesProto) *models.UserWithRoles {
+	tmp0 := make([]int, len(user.Scores))
+	for i := range user.Scores {
+		tmp0[i] = int(user.Scores[i])
+	}
+
+	tmp1 := make(map[string]int)
+	for k, v := range user.Metadata {
+		tmp1[k] = int(v)
+	}
+
+	return &models.UserWithRoles{
+		ID:       user.ID,
+		Name:     user.Name,
+		Roles:    user.Roles,
+		Tags:     user.Tags,
+		Scores:   tmp0,
+		Metadata: tmp1,
+	}
+}
+
+type AdvancedMapperImpl struct{}
+
+var _ example.AdvancedMapper = (*AdvancedMapperImpl)(nil)

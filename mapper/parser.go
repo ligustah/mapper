@@ -109,7 +109,16 @@ func (p *Parser) parsePackage(pkg *packages.Package) []*GoInterface {
 			if iface, ok := typ.Underlying().(*types.Interface); ok {
 				interfaceDocs := docs[typ.Obj().Name()]
 
-				if strings.TrimSpace(interfaceDocs.doc) == "mapper:generate" {
+				// check if the doc contains the mapper:generate directive
+				hasGenerateDirective := false
+				for _, line := range strings.Split(interfaceDocs.doc, "\n") {
+					if strings.TrimSpace(line) == "mapper:generate" {
+						hasGenerateDirective = true
+						break
+					}
+				}
+
+				if hasGenerateDirective {
 					goIface := &GoInterface{
 						Name: typ.Obj().Name(),
 						Pkg:  typ.Obj().Pkg().Path(),
