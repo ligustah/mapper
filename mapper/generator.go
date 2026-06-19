@@ -582,10 +582,13 @@ func sliceMapping(targetType *GoType, gen GeneratorFunc) GeneratorFunc {
 			targetType: ctx.targetType,
 			body:       jen.Empty(),
 			canFail:    false,
-			varCounter: 0,
+			varCounter: ctx.varCounter,
 		}
 
 		value := gen(subCtx, jen.Add(input).Index(jen.Id("i")))
+
+		// update parent's varCounter to avoid collisions with temps used in sub-context
+		ctx.varCounter = subCtx.varCounter
 
 		loopBody := jen.Id(tmpVar).Index(jen.Id("i")).Op("=").Add(value)
 		loop := jen.For(jen.Id("i").Op(":=").Range().Add(input)).Block(subCtx.body.Add(loopBody))
