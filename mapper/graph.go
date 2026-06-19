@@ -69,13 +69,23 @@ func (t *TypeGraph) getMapping(from, to *GoType) []*TypeMapping {
 		return nil
 	}
 
+	// safety check: limit path length to prevent infinite loops
+	// a reasonable upper bound is the number of registered types
+	if len(path) > len(t.types)+1 {
+		return nil
+	}
+
 	var mappings []*TypeMapping
 
 	for i := 0; i < len(path)-1; i++ {
 		from := path[i]
 		to := path[i+1]
 
-		mappings = append(mappings, t.mappers[from][to])
+		mapping, ok := t.mappers[from][to]
+		if !ok {
+			return nil
+		}
+		mappings = append(mappings, mapping)
 	}
 
 	return mappings
