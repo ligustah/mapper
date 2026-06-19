@@ -382,8 +382,14 @@ func getGoType(typ types.Type) *GoType {
 		out.BasicInfo = u.Info()
 		out.Name = u.Name()
 	case *types.Slice:
-		// this is a named slice type, let's just pretend it's the actual slice
-		//return getGoType(u.Underlying())
+		// this is a named slice type
+		out.Kind = SliceKind
+		out.Element = getGoType(u.Elem())
+	case *types.Map:
+		// this is a named map type
+		out.Kind = MapKind
+		out.Key = getGoType(u.Key())
+		out.Value = getGoType(u.Elem())
 	}
 
 	return out
