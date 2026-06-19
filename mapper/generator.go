@@ -28,11 +28,12 @@ func DefaultTypeMappings() []*TypeMapping {
 
 func NewGenerator(pkg string, dir string) *Generator {
 	gen := &Generator{
-		file:     jen.NewFile(pkg),
-		dir:      dir,
-		pkg:      pkg,
-		mappings: map[string]*TypeMapping{},
-		graph:    NewTypeGraph(),
+		file:            jen.NewFile(pkg),
+		dir:             dir,
+		pkg:             pkg,
+		mappings:        map[string]*TypeMapping{},
+		graph:           NewTypeGraph(),
+		registeredEnums: make(map[string]bool),
 	}
 
 	for _, mapper := range defaultTypeMappings {
@@ -43,11 +44,12 @@ func NewGenerator(pkg string, dir string) *Generator {
 }
 
 type Generator struct {
-	file     *jen.File
-	dir      string
-	pkg      string
-	mappings map[string]*TypeMapping
-	graph    *TypeGraph
+	file          *jen.File
+	dir           string
+	pkg           string
+	mappings      map[string]*TypeMapping
+	graph         *TypeGraph
+	registeredEnums map[string]bool
 }
 
 func (m *Generator) AddTypeMapping(mapping *TypeMapping) {
@@ -97,7 +99,12 @@ func (m *Generator) GenerateInterface(in *GoInterface) error {
 
 func (m *Generator) discoverEnum(typ *GoType) {
 	if typ.IsProtoEnum {
-		registerProtoEnum(m, typ)
+		// use TypeName as key to deduplicate
+		key := typ.TypeName
+		if !m.registeredEnums[key] {
+			registerProtoEnum(m, typ)
+			m.registeredEnums[key] = true
+		}
 	}
 
 	for _, field := range typ.Fields {
