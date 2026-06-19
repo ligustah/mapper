@@ -413,6 +413,13 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 		}
 	}
 
+	if from.Kind == ArrayKind && to.Kind == ArrayKind {
+		gen, canFail := m.buildGenerator(from.Element, to.Element)
+		if gen != nil {
+			return arrayMapping(to.Element, gen), canFail
+		}
+	}
+
 	// cross-kind conversions (e.g., struct to basic) are not supported
 	return nil, false
 }
@@ -636,6 +643,36 @@ func mapMapping(targetKey, targetValue *GoType, keyGen, valueGen GeneratorFunc) 
 
 		loopBody := jen.Id(tmpVar).Index(convertedKey).Op("=").Add(convertedValue)
 		loop := jen.For(jen.List(jen.Id("k"), jen.Id("v")).Op(":=").Range().Add(input)).Block(subCtx.body.Add(loopBody))
+
+		ctx.add(
+			initializer.Line(),
+			loop.Line().Line(),
+		)
+
+		return jen.Id(tmpVar)
+	}
+}
+
+func arrayMapping(targetType *GoType, gen GeneratorFunc) GeneratorFunc {
+	return func(ctx *FunctionContext, input jen.Code) jen.Code {
+		tmpVar := ctx.tmpVar()
+
+		initializer := jen.Id(tmpVar).Op(":=").Make(jen.List(jen.Op("[]").Add(targetType.qual()), jen.Len(input)))
+
+		subCtx := &FunctionContext{
+			targetType: ctx.targetType,
+			body:       jen.Empty(),
+			canFail:    false,
+			varCounter: ctx.varCounter,
+		}
+
+		value := gen(subCtx, jen.Add(input).Index(jen.Id("i")))
+
+		// update parent's varCounter to avoid collisions with temps used in sub-context
+		ctx.varCounter = subCtx.varCounter
+
+		loopBody := jen.Id(tmpVar).Index(jen.Id("i")).Op("=").Add(value)
+		loop := jen.For(jen.Id("i").Op(":=").Range().Add(input)).Block(subCtx.body.Add(loopBody))
 
 		ctx.add(
 			initializer.Line(),

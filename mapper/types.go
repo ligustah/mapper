@@ -146,6 +146,7 @@ const (
 	SliceKind
 	PointerKind
 	MapKind
+	ArrayKind
 )
 
 type GoType struct {
@@ -330,6 +331,10 @@ func getGoType(typ types.Type) *GoType {
 		out.Kind = SliceKind
 		out.Element = getGoType(slice.Elem())
 		underlying = slice.Elem()
+	} else if arr, ok := underlying.(*types.Array); ok {
+		out.Kind = ArrayKind
+		out.Element = getGoType(arr.Elem())
+		return out
 	} else if m, ok := underlying.(*types.Map); ok {
 		out.Kind = MapKind
 		out.Key = getGoType(m.Key())
