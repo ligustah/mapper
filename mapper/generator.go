@@ -405,6 +405,14 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 		}
 	}
 
+	if from.Kind == MapKind && to.Kind == MapKind {
+		keyGen, keyCanFail := m.buildGenerator(from.Key, to.Key)
+		valueGen, valueCanFail := m.buildGenerator(from.Value, to.Value)
+		if keyGen != nil && valueGen != nil {
+			return mapMapping(to.Key, to.Value, keyGen, valueGen), keyCanFail || valueCanFail
+		}
+	}
+
 	// cross-kind conversions (e.g., struct to basic) are not supported
 	return nil, false
 }
@@ -596,6 +604,38 @@ func sliceMapping(targetType *GoType, gen GeneratorFunc) GeneratorFunc {
 
 		loopBody := jen.Id(tmpVar).Index(jen.Id("i")).Op("=").Add(value)
 		loop := jen.For(jen.Id("i").Op(":=").Range().Add(input)).Block(subCtx.body.Add(loopBody))
+
+		ctx.add(
+			initializer.Line(),
+			loop.Line().Line(),
+		)
+
+		return jen.Id(tmpVar)
+	}
+}
+
+func mapMapping(targetKey, targetValue *GoType, keyGen, valueGen GeneratorFunc) GeneratorFunc {
+	return func(ctx *FunctionContext, input jen.Code) jen.Code {
+		tmpVar := ctx.tmpVar()
+
+		mapType := jen.Map(jen.Add(targetKey.qual())).Add(targetValue.qual())
+		initializer := jen.Id(tmpVar).Op(":=").Make(mapType)
+
+		subCtx := &FunctionContext{
+			targetType: ctx.targetType,
+			body:       jen.Empty(),
+			canFail:    false,
+			varCounter: ctx.varCounter,
+		}
+
+		convertedKey := keyGen(subCtx, jen.Id("k"))
+		convertedValue := valueGen(subCtx, jen.Id("v"))
+
+		// update parent's varCounter to avoid collisions with temps used in sub-context
+		ctx.varCounter = subCtx.varCounter
+
+		loopBody := jen.Id(tmpVar).Index(convertedKey).Op("=").Add(convertedValue)
+		loop := jen.For(jen.List(jen.Id("k"), jen.Id("v")).Op(":=").Range().Add(input)).Block(subCtx.body.Add(loopBody))
 
 		ctx.add(
 			initializer.Line(),
