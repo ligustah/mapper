@@ -13,10 +13,6 @@ type TypeGraph struct {
 }
 
 func (t *TypeGraph) storeTypIndex(typ *GoType) int {
-	//if typ.Kind == PointerKind {
-	//	typ = typ.Element
-	//}
-
 	if idx, ok := t.typeIndex[typ.String()]; ok {
 		return idx
 	}
@@ -29,10 +25,6 @@ func (t *TypeGraph) storeTypIndex(typ *GoType) int {
 }
 
 func (t *TypeGraph) getTypeIndex(typ *GoType) (int, bool) {
-	//if typ.Kind == PointerKind {
-	//	typ = typ.Element
-	//}
-
 	// look for a direct match
 	if idx, ok := t.typeIndex[typ.String()]; ok {
 		return idx, ok

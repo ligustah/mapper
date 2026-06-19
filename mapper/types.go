@@ -361,9 +361,6 @@ func getGoType(typ types.Type) *GoType {
 	}
 
 	if named, ok := underlying.(*types.Named); ok {
-		if out.Kind == PointerKind {
-			//out.Name = "*"
-		}
 		out.Name += named.Obj().Name()
 		out.Pkg = named.Obj().Pkg().Path()
 		underlying = named.Underlying()
