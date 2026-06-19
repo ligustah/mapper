@@ -36,44 +36,36 @@ type Mapper interface {
 	MapJobReverse(job *protos.Job) *models.Job
 }
 
-// AdvancedMapper demonstrates all supported features
+// AdvancedMapper demonstrates all supported mapper features:
+// - Basic field mapping with automatic type conversion (int -> int32)
+// - Custom converters using the `using:` directive
+// - Slice and map field mapping with automatic element conversion
+// - Fixed-size array support ([4]byte -> [4]byte)
+// - Named slice type support (StringSlice -> []string)
+// - Error handling for converters that can fail
 // mapper:generate
 type AdvancedMapper interface {
-	// Basic field mapping with type conversion (int -> int32, time.Time -> string)
 	// field:CreatedAt using:"github.com/ligustah/mapper/example.FormatTime"
 	MapUser(user *models.User) *protos.UserProto
 
-	// Reverse mapping with using: directive for string -> time.Time
 	// field:CreatedAt using:"github.com/ligustah/mapper/example.ParseTime"
 	MapUserReverse(user *protos.UserProto) (*models.User, error)
 
-	// Slice and map field mapping
-	// Scores: []int -> []int32 (automatic element conversion)
-	// Metadata: map[string]int -> map[string]int64 (automatic element conversion)
 	MapUserWithRoles(user *models.UserWithRoles) *protos.UserWithRolesProto
 
-	// Reverse mapping for slices and maps
-	// Scores: []int32 -> []int (automatic element conversion)
-	// Metadata: map[string]int64 -> map[string]int (automatic element conversion)
 	MapUserWithRolesReverse(user *protos.UserWithRolesProto) *models.UserWithRoles
 
-	// Array field mapping ([4]byte -> [4]byte)
 	MapArrayExample(src *models.ArrayExample) *protos.ArrayExampleProto
 
-	// Reverse array mapping
 	MapArrayExampleReverse(src *protos.ArrayExampleProto) *models.ArrayExample
 
-	// using: directive for custom conversion (int64 -> string)
 	// field:Timestamp using:"github.com/ligustah/mapper/example.ConvertTimestamp"
 	MapCustomConvert(src *models.CustomConvertExample) *protos.CustomConvertExampleProto
 
-	// Reverse using: directive with error handling (string -> int64)
 	// field:Timestamp using:"github.com/ligustah/mapper/example.ParseTimestamp"
 	MapCustomConvertReverse(src *protos.CustomConvertExampleProto) (*models.CustomConvertExample, error)
 
-	// Named slice type mapping (StringSlice -> []string)
 	MapNamedSlice(src *models.NamedSliceExample) *protos.NamedSliceExampleProto
 
-	// Reverse named slice mapping ([]string -> StringSlice)
 	MapNamedSliceReverse(src *protos.NamedSliceExampleProto) *models.NamedSliceExample
 }

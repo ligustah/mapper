@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "delve": {
+      "command": "dlv-mcp",
+      "args": []
+    },
+    "gopls": {
+      "command": "gopls",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}

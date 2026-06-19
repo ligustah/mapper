@@ -20,7 +20,11 @@ func init() {
 	}
 
 	for _, nullType := range nullTypes {
-		n := MustLookupType(fmt.Sprintf("github.com/volatiletech/null.%s", nullType.name))
+		n, err := LookupType(fmt.Sprintf("github.com/volatiletech/null.%s", nullType.name))
+		if err != nil {
+			// null package not available in this module context — skip registration
+			continue
+		}
 
 		nullMappers = append(nullMappers, &TypeMapping{
 			types: TypePair{

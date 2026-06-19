@@ -29,6 +29,7 @@ func main() {
 	}
 
 	generator := mapper.NewGenerator("gen", outDir)
+	generator.SetSrcDir(pkgPath)
 	for _, goInterface := range mappers {
 		err = generator.GenerateInterface(goInterface)
 		if err != nil {

@@ -44,12 +44,17 @@ func NewGenerator(pkg string, dir string) *Generator {
 }
 
 type Generator struct {
-	file          *jen.File
-	dir           string
-	pkg           string
-	mappings      map[string]*TypeMapping
-	graph         *TypeGraph
+	file            *jen.File
+	dir             string
+	srcDir          string // source package directory (for resolving `using:` dependencies)
+	pkg             string
+	mappings        map[string]*TypeMapping
+	graph           *TypeGraph
 	registeredEnums map[string]bool
+}
+
+func (m *Generator) SetSrcDir(dir string) {
+	m.srcDir = dir
 }
 
 func (m *Generator) AddTypeMapping(mapping *TypeMapping) {
@@ -158,6 +163,18 @@ func (m *Generator) buildMapping(f *GoFunction) ([]*ResolvedMapping, error) {
 				source = options.from
 			}
 
+			// handle method: directive — call a named method on the source field value
+			if options.method != "" {
+				mapping, err := m.buildMethodMapping(f, field, options.method)
+				if err != nil {
+					return nil, fmt.Errorf("field %s: %w", field.name, err)
+				}
+				if mapping != nil {
+					mappings = append(mappings, mapping)
+					continue
+				}
+			}
+
 			// handle using directive
 			if options.using != "" {
 				mapping, err := m.buildUsingMapping(f, field, options.using)
@@ -231,6 +248,81 @@ func (m *Generator) buildMapping(f *GoFunction) ([]*ResolvedMapping, error) {
 	return mappings, nil
 }
 
+// buildMethodMapping handles // field:F method:"MethodName" — calls MethodName() on the source
+// field and registers the value-level type conversion in the graph so pointer fields can
+// automatically derive *T → *U from the same mapping without an explicit annotation.
+func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName string) (*ResolvedMapping, error) {
+	source := field.name
+	if opts, ok := f.options[field.name]; ok && opts.from != "" {
+		source = opts.from
+	}
+
+	param, inputField := m.findField(f.inputs, source)
+	if inputField == nil {
+		return nil, fmt.Errorf("field %q not found in inputs", source)
+	}
+
+	srcType := inputField.typ()
+	// dereference pointers to find the method
+	elemType := srcType
+	if elemType.Kind == PointerKind {
+		elemType = elemType.Element
+	}
+
+	// validate the method exists and has the right signature
+	named, ok := elemType.Raw.(*types.Named)
+	if !ok {
+		return nil, fmt.Errorf("method: %q — source type %s is not a named type", methodName, elemType.Name)
+	}
+	var method *types.Func
+	for i := 0; i < named.NumMethods(); i++ {
+		if named.Method(i).Name() == methodName {
+			method = named.Method(i)
+			break
+		}
+	}
+	if method == nil {
+		return nil, fmt.Errorf("method %q not found on type %s", methodName, elemType.Name)
+	}
+	sig := method.Type().(*types.Signature)
+	if sig.Params().Len() != 0 {
+		return nil, fmt.Errorf("method %q must take no parameters", methodName)
+	}
+	if sig.Results().Len() != 1 {
+		return nil, fmt.Errorf("method %q must return exactly one value", methodName)
+	}
+
+	resultGoType := getGoType(sig.Results().At(0).Type())
+
+	// Register value-level T → U in the type graph so pointer fields (*T → *U) can
+	// auto-derive the mapping without needing an explicit annotation.
+	m.AddTypeMapping(&TypeMapping{
+		types: TypePair{
+			from: elemType,
+			to:   resultGoType,
+		},
+		generator: methodConverter(methodName, elemType, false),
+	})
+
+	inputExpr := jen.Id(param.name).Op(".").Add(inputField.id())
+
+	// Build the generator: if the source is *T, use nil-safe pointer wrapping.
+	var gen GeneratorFunc
+	if srcType.Kind == PointerKind && field.typ.Kind == PointerKind {
+		inner := methodConverter(methodName, elemType, false)
+		gen = mapPointerToPointer(resultGoType, inner)
+	} else {
+		gen = methodConverter(methodName, elemType, false)
+	}
+
+	return &ResolvedMapping{
+		output:    field,
+		input:     inputExpr,
+		generator: gen,
+		canFail:   false,
+	}, nil
+}
+
 func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using string) (*ResolvedMapping, error) {
 	// parse the function reference
 	_, pkgPath, typeName, methodName, _, err := splitPackageAndType(using)
@@ -238,9 +330,11 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 		return nil, fmt.Errorf("invalid using reference %q: %w", using, err)
 	}
 
-	// load the package
+	// load the package using the source dir so `using:` references resolve
+	// against the target module's dependencies, not the generator's module.
 	pkgs, err := packages.Load(&packages.Config{
 		Mode: packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
+		Dir:  m.srcDir,
 	}, pkgPath)
 	if err != nil {
 		return nil, fmt.Errorf("loading package %q: %w", pkgPath, err)
@@ -288,9 +382,19 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 		funcSig = funcObj.Type().(*types.Signature)
 	}
 
-	// validate signature: must have 1 param and 1 or 2 returns
-	if funcSig.Params().Len() != 1 {
-		return nil, fmt.Errorf("using function must have exactly 1 parameter, got %d", funcSig.Params().Len())
+	// validate signature: methods have receiver+0 params; functions have 1 param.
+	isMethod := methodName != ""
+	if isMethod {
+		if funcSig.Params().Len() != 0 {
+			return nil, fmt.Errorf("using method must have no parameters (besides receiver), got %d", funcSig.Params().Len())
+		}
+		if funcSig.Recv() == nil {
+			return nil, fmt.Errorf("using method %q has no receiver", methodName)
+		}
+	} else {
+		if funcSig.Params().Len() != 1 {
+			return nil, fmt.Errorf("using function must have exactly 1 parameter, got %d", funcSig.Params().Len())
+		}
 	}
 	if funcSig.Results().Len() != 1 && funcSig.Results().Len() != 2 {
 		return nil, fmt.Errorf("using function must have 1 or 2 return values, got %d", funcSig.Results().Len())
@@ -305,10 +409,18 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 		hasError = true
 	}
 
-	// find an input parameter that matches the function's input type
-	funcInputType := getGoType(funcSig.Params().At(0).Type())
+	// find an input parameter that matches the function's input type.
+	// for methods, the "input type" is the receiver type.
+	var funcInputRawType types.Type
+	if isMethod {
+		funcInputRawType = funcSig.Recv().Type()
+	} else {
+		funcInputRawType = funcSig.Params().At(0).Type()
+	}
+	funcInputType := getGoType(funcInputRawType)
 	var inputParam *GoParameter
 	var inputExpr *jen.Statement
+	var sourceFieldType *GoType // actual type of the source field (may differ from funcInputType for pointers)
 
 	// if source is ".", use the whole input
 	if f.options[field.name] != nil && f.options[field.name].from == "." {
@@ -318,6 +430,7 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 				(input.typ.Kind == PointerKind && types.AssignableTo(input.typ.Element.Raw, funcInputType.Raw)) {
 				inputParam = input
 				inputExpr = jen.Id(input.name)
+				sourceFieldType = input.typ
 				break
 			}
 		}
@@ -331,6 +444,7 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 		if param, inputField := m.findField(f.inputs, source); inputField != nil {
 			inputParam = param
 			inputExpr = jen.Id(param.name).Op(".").Add(inputField.id())
+			sourceFieldType = inputField.typ()
 		}
 	}
 
@@ -358,6 +472,15 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 			}
 			return call
 		}
+	}
+
+	// If the source field is *T but the function/method expects T, and the target field is *U,
+	// wrap with nil-safe pointer-to-pointer logic rather than calling through a raw pointer.
+	if sourceFieldType != nil &&
+		sourceFieldType.Kind == PointerKind &&
+		funcInputType.Kind != PointerKind &&
+		field.typ.Kind == PointerKind {
+		generator = mapPointerToPointer(field.typ.Element, generator)
 	}
 
 	return &ResolvedMapping{
@@ -389,6 +512,15 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 	if pair.to.Kind == PointerKind {
 		if types.AssignableTo(pair.from.Raw, pair.to.Element.Raw) {
 			return mapToPointer(identityMapping), false
+		}
+	}
+
+	// *T → *U: check before the graph to avoid spurious multi-hop paths through unrelated types.
+	// If we can map T → U, derive a nil-safe pointer-to-pointer mapping automatically.
+	if from.Kind == PointerKind && to.Kind == PointerKind {
+		gen, canFail := m.buildGenerator(from.Element, to.Element)
+		if gen != nil {
+			return mapPointerToPointer(to.Element, gen), canFail
 		}
 	}
 
@@ -584,6 +716,42 @@ func mapToPointer(gen GeneratorFunc) GeneratorFunc {
 		ctx.add(jen.Id(tmpVar).Op(":=").Add(input).Line())
 
 		return gen(ctx, jen.Op("&").Id(tmpVar))
+	}
+}
+
+// mapPointerToPointer derives a nil-safe *T → *U mapping from a T → U generator.
+// If the input pointer is nil, the output pointer is nil.
+func mapPointerToPointer(targetElem *GoType, gen GeneratorFunc) GeneratorFunc {
+	return func(ctx *FunctionContext, input jen.Code) jen.Code {
+		outVar := ctx.tmpVar()
+		inVar := ctx.tmpVar()
+
+		ctx.add(jen.Var().Id(outVar).Op("*").Add(targetElem.qual()).Line())
+
+		subCtx := &FunctionContext{
+			targetType: ctx.targetType,
+			body:       jen.Empty(),
+			canFail:    false,
+			varCounter: ctx.varCounter,
+		}
+		// inside the nil-check block inVar is *T; gen expects T, but Go auto-dereferences
+		// value-receiver methods through a pointer, so passing inVar directly works.
+		converted := gen(subCtx, jen.Id(inVar))
+		ctx.varCounter = subCtx.varCounter
+
+		valVar := ctx.tmpVar()
+		ifBody := jen.Empty().Add(subCtx.body)
+		ifBody.Add(jen.Id(valVar).Op(":=").Add(converted).Line())
+		ifBody.Add(jen.Id(outVar).Op("=").Op("&").Id(valVar))
+
+		ctx.add(
+			jen.If(
+				jen.Id(inVar).Op(":=").Add(input),
+				jen.Id(inVar).Op("!=").Nil(),
+			).Block(ifBody).Line(),
+		)
+
+		return jen.Id(outVar)
 	}
 }
 

@@ -196,6 +196,7 @@ func (p *Parser) getGoFunction(method *types.Func, f funcDoc) (*GoFunction, erro
 
 				goFunc.options[fieldName].from = tag.Get("from")
 				goFunc.options[fieldName].using = tag.Get("using")
+				goFunc.options[fieldName].method = tag.Get("method")
 			}
 		}
 	}
