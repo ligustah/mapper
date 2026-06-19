@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/dave/jennifer/jen"
+	"golang.org/x/tools/go/packages"
 )
 
 var defaultTypeMappings []*TypeMapping
@@ -140,6 +141,18 @@ func (m *Generator) buildMapping(f *GoFunction) ([]*ResolvedMapping, error) {
 			} else if options.from != "" {
 				source = options.from
 			}
+
+			// handle using directive
+			if options.using != "" {
+				mapping, err := m.buildUsingMapping(f, field, options.using)
+				if err != nil {
+					return nil, fmt.Errorf("field %s: %w", field.name, err)
+				}
+				if mapping != nil {
+					mappings = append(mappings, mapping)
+					continue
+				}
+			}
 		}
 
 		// resolve the output
@@ -200,6 +213,143 @@ func (m *Generator) buildMapping(f *GoFunction) ([]*ResolvedMapping, error) {
 	}
 
 	return mappings, nil
+}
+
+func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using string) (*ResolvedMapping, error) {
+	// parse the function reference
+	_, pkgPath, typeName, methodName, _, err := splitPackageAndType(using)
+	if err != nil {
+		return nil, fmt.Errorf("invalid using reference %q: %w", using, err)
+	}
+
+	// load the package
+	pkgs, err := packages.Load(&packages.Config{
+		Mode: packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
+	}, pkgPath)
+	if err != nil {
+		return nil, fmt.Errorf("loading package %q: %w", pkgPath, err)
+	}
+	if len(pkgs) != 1 {
+		return nil, fmt.Errorf("expected one package, got %d", len(pkgs))
+	}
+
+	pkg := pkgs[0]
+	var funcSig *types.Signature
+
+	if methodName != "" {
+		// method on a type: pkg.(*Type).Method or pkg.(Type).Method
+		obj := pkg.Types.Scope().Lookup(typeName)
+		if obj == nil {
+			return nil, fmt.Errorf("type %q not found in package %q", typeName, pkgPath)
+		}
+		named, ok := obj.Type().(*types.Named)
+		if !ok {
+			return nil, fmt.Errorf("%q is not a named type", typeName)
+		}
+
+		// find the method
+		var method *types.Func
+		for i := 0; i < named.NumMethods(); i++ {
+			if named.Method(i).Name() == methodName {
+				method = named.Method(i)
+				break
+			}
+		}
+		if method == nil {
+			return nil, fmt.Errorf("method %q not found on type %q", methodName, typeName)
+		}
+		funcSig = method.Type().(*types.Signature)
+	} else {
+		// standalone function: pkg.FuncName
+		obj := pkg.Types.Scope().Lookup(typeName)
+		if obj == nil {
+			return nil, fmt.Errorf("function %q not found in package %q", typeName, pkgPath)
+		}
+		funcObj, ok := obj.(*types.Func)
+		if !ok {
+			return nil, fmt.Errorf("%q is not a function", typeName)
+		}
+		funcSig = funcObj.Type().(*types.Signature)
+	}
+
+	// validate signature: must have 1 param and 1 or 2 returns
+	if funcSig.Params().Len() != 1 {
+		return nil, fmt.Errorf("using function must have exactly 1 parameter, got %d", funcSig.Params().Len())
+	}
+	if funcSig.Results().Len() != 1 && funcSig.Results().Len() != 2 {
+		return nil, fmt.Errorf("using function must have 1 or 2 return values, got %d", funcSig.Results().Len())
+	}
+
+	hasError := false
+	if funcSig.Results().Len() == 2 {
+		errType := funcSig.Results().At(1).Type()
+		if named, ok := errType.(*types.Named); !ok || named.Obj().Name() != "error" {
+			return nil, fmt.Errorf("second return value must be error, got %v", errType)
+		}
+		hasError = true
+	}
+
+	// find an input parameter that matches the function's input type
+	funcInputType := getGoType(funcSig.Params().At(0).Type())
+	var inputParam *GoParameter
+	var inputExpr *jen.Statement
+
+	// if source is ".", use the whole input
+	if f.options[field.name] != nil && f.options[field.name].from == "." {
+		// try to find a matching input
+		for _, input := range f.inputs {
+			if types.AssignableTo(input.typ.Raw, funcInputType.Raw) ||
+				(input.typ.Kind == PointerKind && types.AssignableTo(input.typ.Element.Raw, funcInputType.Raw)) {
+				inputParam = input
+				inputExpr = jen.Id(input.name)
+				break
+			}
+		}
+	} else {
+		// find the field and use it
+		source := field.name
+		if f.options[field.name] != nil && f.options[field.name].from != "" {
+			source = f.options[field.name].from
+		}
+
+		if param, inputField := m.findField(f.inputs, source); inputField != nil {
+			inputParam = param
+			inputExpr = jen.Id(param.name).Op(".").Add(inputField.id())
+		}
+	}
+
+	if inputParam == nil {
+		return nil, fmt.Errorf("no input parameter matches the using function's input type %v", funcInputType)
+	}
+
+	// create the generator
+	var generator GeneratorFunc
+	if methodName != "" {
+		// method call
+		generator = func(ctx *FunctionContext, input jen.Code) jen.Code {
+			call := jen.Add(input).Dot(methodName).Call()
+			if hasError {
+				return ctx.handleError(call)
+			}
+			return call
+		}
+	} else {
+		// function call
+		generator = func(ctx *FunctionContext, input jen.Code) jen.Code {
+			call := jen.Qual(pkgPath, typeName).Call(input)
+			if hasError {
+				return ctx.handleError(call)
+			}
+			return call
+		}
+	}
+
+	return &ResolvedMapping{
+		output:    field,
+		input:     inputExpr,
+		generator: generator,
+		canFail:   hasError,
+	}, nil
 }
 
 func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, bool) {
