@@ -18,8 +18,14 @@ func init() {
 }
 
 func registerProtoEnum(generator *Generator, enum *GoType) {
-	name := fmt.Sprintf("%s_name", enum.Name)
-	value := fmt.Sprintf("%s_value", enum.Name)
+	// use the base enum type for name/value lookups
+	baseEnum := enum
+	if enum.Kind == PointerKind && enum.Element != nil {
+		baseEnum = enum.Element
+	}
+
+	name := fmt.Sprintf("%s_name", baseEnum.Name)
+	value := fmt.Sprintf("%s_value", baseEnum.Name)
 
 	generator.AddTypeMapping(
 		&TypeMapping{
@@ -32,15 +38,21 @@ func registerProtoEnum(generator *Generator, enum *GoType) {
 
 				ctx.add(jen.Var().Id(tmp).Qual("", "string").Line())
 
+				// dereference pointer if needed
+				inputExpr := input
+				if enum.Kind == PointerKind {
+					inputExpr = jen.Op("*").Parens(input)
+				}
+
 				ctx.add(jen.IfFunc(func(group *jen.Group) {
-					group.List(jen.Id("str"), jen.Id("ok")).Op(":=").Qual(enum.Pkg, name).Index(jen.Qual("", "int32").Parens(input))
+					group.List(jen.Id("str"), jen.Id("ok")).Op(":=").Qual(baseEnum.Pkg, name).Index(jen.Qual("", "int32").Parens(inputExpr))
 					group.Id("ok")
 				}).BlockFunc(func(group *jen.Group) {
 					group.Id(tmp).Op("=").Id("str")
 				}).Else().BlockFunc(func(group *jen.Group) {
-					fmtString := jen.Lit(fmt.Sprintf("invalid integer value for enum %s: %%d", enum.Name))
+					fmtString := jen.Lit(fmt.Sprintf("invalid integer value for enum %s: %%d", baseEnum.Name))
 
-					group.Return(ctx.targetType.zero(), jen.Qual("fmt", "Errorf").Call(fmtString, input))
+					group.Return(ctx.targetType.zero(), jen.Qual("fmt", "Errorf").Call(fmtString, inputExpr))
 				}).Line().Line())
 
 				return jen.Id(tmp)
@@ -60,12 +72,12 @@ func registerProtoEnum(generator *Generator, enum *GoType) {
 				ctx.add(jen.Var().Id(tmp).Add(enum.qual()).Line())
 
 				ctx.add(jen.IfFunc(func(group *jen.Group) {
-					group.List(jen.Id("val"), jen.Id("ok")).Op(":=").Qual(enum.Pkg, value).Index(input)
+					group.List(jen.Id("val"), jen.Id("ok")).Op(":=").Qual(baseEnum.Pkg, value).Index(input)
 					group.Id("ok")
 				}).BlockFunc(func(group *jen.Group) {
 					group.Id(tmp).Op("=").Add(enum.qual()).Parens(jen.Id("val"))
 				}).Else().BlockFunc(func(group *jen.Group) {
-					fmtString := jen.Lit(fmt.Sprintf("invalid string value for enum %s: %%s", enum.Name))
+					fmtString := jen.Lit(fmt.Sprintf("invalid string value for enum %s: %%s", baseEnum.Name))
 
 					group.Return(ctx.targetType.zero(), jen.Qual("fmt", "Errorf").Call(fmtString, input))
 				}).Line().Line())
