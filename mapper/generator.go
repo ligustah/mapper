@@ -405,10 +405,7 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 		}
 	}
 
-	if from.Kind != to.Kind {
-
-	}
-
+	// cross-kind conversions (e.g., struct to basic) are not supported
 	return nil, false
 }
 
