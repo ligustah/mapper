@@ -48,13 +48,13 @@ type AdvancedMapper interface {
 	MapUserReverse(user *protos.UserProto) (*models.User, error)
 
 	// Slice and map field mapping
-	// field:Scores uses element conversion (int -> int32)
-	// field:Metadata uses element conversion (int -> int64)
+	// Scores: []int -> []int32 (automatic element conversion)
+	// Metadata: map[string]int -> map[string]int64 (automatic element conversion)
 	MapUserWithRoles(user *models.UserWithRoles) *protos.UserWithRolesProto
 
 	// Reverse mapping for slices and maps
-	// field:Scores uses element conversion (int32 -> int)
-	// field:Metadata uses element conversion (int64 -> int)
+	// Scores: []int32 -> []int (automatic element conversion)
+	// Metadata: map[string]int64 -> map[string]int (automatic element conversion)
 	MapUserWithRolesReverse(user *protos.UserWithRolesProto) *models.UserWithRoles
 
 	// Array field mapping ([4]byte -> [4]byte)
