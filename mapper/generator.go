@@ -7,25 +7,34 @@ import (
 	"go/types"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/dave/jennifer/jen"
 )
 
-var typeMappingRegistry []*TypeMapping
+var defaultTypeMappings []*TypeMapping
 
-func registerTypeMappings(mapping ...*TypeMapping) {
-	typeMappingRegistry = append(typeMappingRegistry, mapping...)
+func registerDefaultMappings(mapping ...*TypeMapping) {
+	defaultTypeMappings = append(defaultTypeMappings, mapping...)
 }
 
-func NewGenerator(pkg string) *Generator {
+func DefaultTypeMappings() []*TypeMapping {
+	out := make([]*TypeMapping, len(defaultTypeMappings))
+	copy(out, defaultTypeMappings)
+	return out
+}
+
+func NewGenerator(pkg string, dir string) *Generator {
 	gen := &Generator{
 		file:     jen.NewFile(pkg),
+		dir:      dir,
+		pkg:      pkg,
 		mappings: map[string]*TypeMapping{},
 		graph:    NewTypeGraph(),
 	}
 
-	for _, mapper := range typeMappingRegistry {
+	for _, mapper := range defaultTypeMappings {
 		gen.AddTypeMapping(mapper)
 	}
 
@@ -34,6 +43,8 @@ func NewGenerator(pkg string) *Generator {
 
 type Generator struct {
 	file     *jen.File
+	dir      string
+	pkg      string
 	mappings map[string]*TypeMapping
 	graph    *TypeGraph
 }
@@ -73,8 +84,7 @@ func (m *Generator) GenerateInterface(in *GoInterface) error {
 	for _, method := range in.Methods {
 		err := m.generateMethod(name, method)
 		if err != nil {
-			log.Println(method.name, err)
-			//return err
+			return fmt.Errorf("generating method %s: %w", method.name, err)
 		}
 	}
 
@@ -247,7 +257,10 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 
 func (m *Generator) generateMethod(mapperName string, f *GoFunction) error {
 	to := f.output
-	if to.Kind != StructKind && to.Kind != PointerKind && to.Element.Kind != StructKind {
+	switch {
+	case to.Kind == StructKind:
+	case to.Kind == PointerKind && to.Element != nil && to.Element.Kind == StructKind:
+	default:
 		return errors.New("target type must be a struct or a pointer to a struct")
 	}
 
@@ -342,8 +355,12 @@ func (m *Generator) String() (string, error) {
 	return buf.String(), nil
 }
 
-func (m *Generator) Render() {
-	log.Println(m.file.Render(os.Stdout))
+func (m *Generator) Render() error {
+	if err := os.MkdirAll(m.dir, 0755); err != nil {
+		return fmt.Errorf("creating output directory: %w", err)
+	}
+	filename := filepath.Join(m.dir, m.pkg+".go")
+	return m.file.Save(filename)
 }
 
 func compose(pair TypePair, mappings []*TypeMapping) (GeneratorFunc, bool) {

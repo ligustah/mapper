@@ -66,5 +66,5 @@ func init() {
 		})
 	}
 
-	registerTypeMappings(nullMappers...)
+	registerDefaultMappings(nullMappers...)
 }

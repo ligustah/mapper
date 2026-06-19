@@ -54,7 +54,7 @@ func init() {
 		builtinMappers = append(builtinMappers, integerParser(uIntType, "ParseUint"))
 	}
 
-	registerTypeMappings(builtinMappers...)
+	registerDefaultMappings(builtinMappers...)
 }
 
 func integerFormatter(typ types.BasicKind, name string) *TypeMapping {

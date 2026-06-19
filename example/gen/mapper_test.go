@@ -59,16 +59,14 @@ func TestMapperImpl(t *testing.T) {
 			t.Run("MapJob", func(t *testing.T) {
 				got := m.MapJob(tt.mJob)
 				if diff := cmp.Diff(got, tt.pJob, diffOpts); diff != "" {
-					t.Errorf("MapJob() returned unexpected result")
-					t.Errorf(diff)
+				t.Errorf("MapJob() returned unexpected result:\n%s", diff)
 				}
 			})
 
 			t.Run("MapJobReverse", func(t *testing.T) {
 				got := m.MapJobReverse(tt.pJob)
 				if diff := cmp.Diff(got, tt.mJob, diffOpts); diff != "" {
-					t.Errorf("MapJobReverse() returned unexpected result")
-					t.Errorf(diff)
+				t.Errorf("MapJobReverse() returned unexpected result:\n%s", diff)
 				}
 			})
 		})
