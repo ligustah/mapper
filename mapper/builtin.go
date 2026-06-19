@@ -194,7 +194,7 @@ func RegisterCustomMapper[IN any, OUT any, Fn ConverterFunc[IN, OUT]](customMapp
 		fn = methodConverter(methodName, to, hasError)
 	}
 
-	registerTypeMappings(&TypeMapping{
+	registerDefaultMappings(&TypeMapping{
 		types: TypePair{
 			from: from,
 			to:   to,
