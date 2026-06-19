@@ -323,13 +323,23 @@ func splitPackageAndType(name string) (canonical string, pkg string, typeName, m
 	return
 }
 
+var typeCache = make(map[types.Type]*GoType)
+
 func getGoType(typ types.Type) *GoType {
+	// check cache to prevent infinite recursion on circular types
+	if cached, ok := typeCache[typ]; ok {
+		return cached
+	}
+
 	underlying := typ
 
 	out := &GoType{
 		Raw:      typ,
 		TypeName: types.TypeString(typ, nil),
 	}
+
+	// add to cache before processing to handle circular references
+	typeCache[typ] = out
 
 	if pointer, ok := underlying.(*types.Pointer); ok {
 		out.Kind = PointerKind
@@ -382,36 +392,13 @@ func getGoType(typ types.Type) *GoType {
 				continue
 			}
 
-			// handle embedded (anonymous) fields by flattening their fields
-			if field.Anonymous() {
-				embeddedType := getGoType(field.Type())
-				// flatten embedded struct fields
-				if embeddedType.Kind == StructKind {
-					for _, embeddedField := range embeddedType.Fields {
-						out.Fields = append(out.Fields, embeddedField)
-					}
-				} else if embeddedType.Kind == PointerKind && embeddedType.Element != nil && embeddedType.Element.Kind == StructKind {
-					// handle pointer to embedded struct
-					for _, embeddedField := range embeddedType.Element.Fields {
-						out.Fields = append(out.Fields, embeddedField)
-					}
-				} else {
-					// non-struct embedded field, add as regular field
-					goField := &GoField{
-						name: field.Name(),
-						typ:  embeddedType,
-						raw:  field,
-					}
-					out.Fields = append(out.Fields, goField)
-				}
-			} else {
-				goField := &GoField{
-					name: field.Name(),
-					typ:  getGoType(field.Type()),
-					raw:  field,
-				}
-				out.Fields = append(out.Fields, goField)
+			goField := &GoField{
+				name: field.Name(),
+				typ:  getGoType(field.Type()),
+				raw:  field,
 			}
+
+			out.Fields = append(out.Fields, goField)
 		}
 	case *types.Basic:
 		out.Kind = BasicKind

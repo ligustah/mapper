@@ -1,5 +1,7 @@
 package example
 
+//go:generate go run ../main.go .
+
 import (
 	"github.com/ligustah/mapper/example/models"
 	"github.com/ligustah/mapper/example/protos"

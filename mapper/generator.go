@@ -98,6 +98,15 @@ func (m *Generator) GenerateInterface(in *GoInterface) error {
 }
 
 func (m *Generator) discoverEnum(typ *GoType) {
+	m.discoverEnumWithVisited(typ, make(map[*GoType]bool))
+}
+
+func (m *Generator) discoverEnumWithVisited(typ *GoType, visited map[*GoType]bool) {
+	if visited[typ] {
+		return
+	}
+	visited[typ] = true
+
 	if typ.IsProtoEnum {
 		// use TypeName as key to deduplicate
 		key := typ.TypeName
@@ -108,11 +117,11 @@ func (m *Generator) discoverEnum(typ *GoType) {
 	}
 
 	for _, field := range typ.Fields {
-		m.discoverEnum(field.typ)
+		m.discoverEnumWithVisited(field.typ, visited)
 	}
 
 	if typ.Element != nil {
-		m.discoverEnum(typ.Element)
+		m.discoverEnumWithVisited(typ.Element, visited)
 	}
 }
 
