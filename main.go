@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -14,12 +15,21 @@ func init() {
 }
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "usage: %s <package_path>\n", os.Args[0])
+	strictEnums := flag.Bool("strict-enums", false,
+		"fail instead of warning when a generated conversion between two enums can produce a value the target does not declare")
+
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "usage: %s [flags] <package_path>\n", os.Args[0])
+		flag.PrintDefaults()
+	}
+	flag.Parse()
+
+	if flag.NArg() < 1 {
+		flag.Usage()
 		os.Exit(1)
 	}
 
-	pkgPath := os.Args[1]
+	pkgPath := flag.Arg(0)
 	outDir := filepath.Join(pkgPath, "gen")
 
 	parser := mapper.NewParser()
@@ -30,6 +40,7 @@ func main() {
 
 	generator := mapper.NewGenerator("gen", outDir)
 	generator.SetSrcDir(pkgPath)
+	generator.SetStrictEnums(*strictEnums)
 	for _, goInterface := range mappers {
 		err = generator.GenerateInterface(goInterface)
 		if err != nil {

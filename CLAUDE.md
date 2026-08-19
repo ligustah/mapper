@@ -21,9 +21,13 @@ go build -o mapper .
 
 Run code generation:
 ```bash
-./mapper <package_path>
+./mapper [flags] <package_path>
 # Example: ./mapper ./example
+# Example: ./mapper -strict-enums ./example
 ```
+
+Flags:
+- `-strict-enums`: fail instead of warning when a generated conversion between two enums can produce a value the target does not declare
 
 Run tests:
 ```bash
@@ -70,6 +74,11 @@ The main entry point is `main.go`, which parses a package and generates mapper i
 **Null Type Handling (`mapper/null.go`)**
 - Provides converters for `null.String`, `null.Int`, etc. from `volatiletech/null`
 
+**Enum Compatibility (`mapper/enum.go`)**
+- Collects the constants declared for a named type from its package scope
+- Compares both sides of a generated type conversion, reporting source constants the target does not declare and constants whose name matches a target constant with a different value
+- Only warns by default, `-strict-enums` / `Generator.SetStrictEnums()` makes it an error
+
 ### Code Generation Flow
 
 1. **Parse**: `Parser.Parse()` loads package and extracts `// mapper:generate` interfaces
@@ -77,6 +86,14 @@ The main entry point is `main.go`, which parses a package and generates mapper i
 3. **Find Converters**: `Generator.buildGenerator()` queries the type graph for conversion paths
 4. **Compose**: If indirect, `compose()` chains multiple converters together
 5. **Render**: `Generator.generateMethod()` emits the final method implementation using `jennifer`
+
+### Direct Type Conversions
+
+When no converter is registered for a pair, the generator falls back to a plain Go
+conversion (`store.GalaxyState(in.State)`) if both types have identical underlying
+types, e.g. two separately declared `type X string`. This is narrower than
+`types.ConvertibleTo` on purpose: lossy conversions such as `int64` → `int32` and
+`string` ↔ `[]byte` are not auto-derived and still need an explicit converter.
 
 ### Field Mapping Directives
 

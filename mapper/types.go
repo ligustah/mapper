@@ -401,7 +401,11 @@ func getGoType(typ types.Type) *GoType {
 	case *types.Basic:
 		out.Kind = BasicKind
 		out.BasicInfo = u.Info()
-		out.Name = u.Name()
+		// for a named basic type (e.g. `type State string`) the name was already
+		// taken from the type name above, don't overwrite it with the underlying one
+		if out.Name == "" {
+			out.Name = u.Name()
+		}
 	case *types.Slice:
 		// this is a named slice type
 		out.Kind = SliceKind

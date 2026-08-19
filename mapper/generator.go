@@ -28,12 +28,13 @@ func DefaultTypeMappings() []*TypeMapping {
 
 func NewGenerator(pkg string, dir string) *Generator {
 	gen := &Generator{
-		file:            jen.NewFile(pkg),
-		dir:             dir,
-		pkg:             pkg,
-		mappings:        map[string]*TypeMapping{},
-		graph:           NewTypeGraph(),
-		registeredEnums: make(map[string]bool),
+		file:             jen.NewFile(pkg),
+		dir:              dir,
+		pkg:              pkg,
+		mappings:         map[string]*TypeMapping{},
+		graph:            NewTypeGraph(),
+		registeredEnums:  make(map[string]bool),
+		checkedEnumPairs: make(map[string]bool),
 	}
 
 	for _, mapper := range defaultTypeMappings {
@@ -51,10 +52,21 @@ type Generator struct {
 	mappings        map[string]*TypeMapping
 	graph           *TypeGraph
 	registeredEnums map[string]bool
+
+	strictEnums      bool
+	checkedEnumPairs map[string]bool
+	enumProblems     []string
 }
 
 func (m *Generator) SetSrcDir(dir string) {
 	m.srcDir = dir
+}
+
+// SetStrictEnums turns enum compatibility problems into errors. By default they
+// are only logged, since two enums may legitimately diverge on values that never
+// reach the mapper.
+func (m *Generator) SetStrictEnums(strict bool) {
+	m.strictEnums = strict
 }
 
 func (m *Generator) AddTypeMapping(mapping *TypeMapping) {
@@ -89,6 +101,8 @@ func (m *Generator) GenerateInterface(in *GoInterface) error {
 		}
 	}
 
+	problemsBefore := len(m.enumProblems)
+
 	for _, method := range in.Methods {
 		err := m.generateMethod(name, method)
 		if err != nil {
@@ -96,10 +110,43 @@ func (m *Generator) GenerateInterface(in *GoInterface) error {
 		}
 	}
 
+	// only populated in strict mode
+	if found := m.enumProblems[problemsBefore:]; len(found) > 0 {
+		return fmt.Errorf("incompatible enums in %s:\n\t%s", in.Name, strings.Join(found, "\n\t"))
+	}
+
 	m.file.Add(mapperStruct)
 	m.file.Add(typeCheck)
 
 	return nil
+}
+
+// checkEnums verifies that a generated type conversion between two enum-like types
+// cannot produce a value the target does not declare. Problems are logged, and in
+// strict mode also collected so that generation fails.
+func (m *Generator) checkEnums(pair TypePair) {
+	key := pair.String()
+	if m.checkedEnumPairs[key] {
+		return
+	}
+	m.checkedEnumPairs[key] = true
+
+	problems := checkEnumConversion(pair.from.Raw, pair.to.Raw)
+	if len(problems) == 0 {
+		return
+	}
+
+	for _, problem := range problems {
+		message := fmt.Sprintf("enum mismatch converting %s to %s: %s", pair.from, pair.to, problem)
+
+		if m.strictEnums {
+			// reported together as a single error once the interface is done
+			m.enumProblems = append(m.enumProblems, message)
+			continue
+		}
+
+		log.Printf("warning: %s", message)
+	}
 }
 
 func (m *Generator) discoverEnum(typ *GoType) {
@@ -517,7 +564,8 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 
 	// *T → *U: check before the graph to avoid spurious multi-hop paths through unrelated types.
 	// If we can map T → U, derive a nil-safe pointer-to-pointer mapping automatically.
-	if from.Kind == PointerKind && to.Kind == PointerKind {
+	// A single converter registered for this exact pair still wins, it was declared deliberately.
+	if from.Kind == PointerKind && to.Kind == PointerKind && len(m.graph.getMapping(pair.from, pair.to)) != 1 {
 		gen, canFail := m.buildGenerator(from.Element, to.Element)
 		if gen != nil {
 			return mapPointerToPointer(to.Element, gen), canFail
@@ -536,6 +584,14 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 		log.Printf("converting %s to %s using %d converters: %s", pair.from.String(), pair.to.String(), len(mappers), strings.Join(names, " -> "))
 
 		return gen, canFail
+	}
+
+	// no converter is registered, but the two types may still be a plain Go type
+	// conversion away from each other (e.g. two named string types)
+	if isLosslessConversion(pair.from.Raw, pair.to.Raw) {
+		log.Printf("converting %s to %s using a direct type conversion", pair.from.String(), pair.to.String())
+		m.checkEnums(pair)
+		return convertMapping(pair.to), false
 	}
 
 	// if we have no direct match, see if the potential element types can be matched
@@ -705,6 +761,16 @@ func compose(pair TypePair, mappings []*TypeMapping) (GeneratorFunc, bool) {
 			outputType = mapping.types.to
 		}
 
+		// the last converter in the chain may hand back a pointer where a value was
+		// requested (or the other way around), adjust the result to the target type
+		if (outputType.Kind == PointerKind) != (pair.to.Kind == PointerKind) {
+			if pair.to.Kind == PointerKind {
+				output = mapToPointer(identityMapping)(ctx, output)
+			} else {
+				output = mapFromPointer(identityMapping, pair.to)(ctx, output)
+			}
+		}
+
 		return output
 	}, canFail
 }
@@ -734,9 +800,13 @@ func mapPointerToPointer(targetElem *GoType, gen GeneratorFunc) GeneratorFunc {
 			canFail:    false,
 			varCounter: ctx.varCounter,
 		}
-		// inside the nil-check block inVar is *T; gen expects T, but Go auto-dereferences
-		// value-receiver methods through a pointer, so passing inVar directly works.
-		converted := gen(subCtx, jen.Id(inVar))
+		// inside the nil-check block inVar is *T, while gen expects T. Method calls would
+		// auto-dereference, but conversions and plain function calls would not, so
+		// dereference into a value first and hand that to the generator.
+		derefVar := subCtx.tmpVar()
+		subCtx.add(jen.Id(derefVar).Op(":=").Op("*").Id(inVar).Line())
+
+		converted := gen(subCtx, jen.Id(derefVar))
 		ctx.varCounter = subCtx.varCounter
 
 		valVar := ctx.tmpVar()
@@ -862,6 +932,36 @@ func arrayMapping(targetType *GoType, gen GeneratorFunc) GeneratorFunc {
 
 func identityMapping(ctx *FunctionContext, input jen.Code) jen.Code {
 	return input
+}
+
+// isLosslessConversion reports whether `from` can be turned into `to` with a plain
+// Go type conversion that cannot lose information. This is deliberately narrower
+// than types.ConvertibleTo, which would also allow truncating conversions such as
+// int64 -> int32 and representation changes such as string <-> []byte. Requiring
+// identical underlying types restricts this to cases that only differ in the name
+// of the type, e.g. two distinct `type X string` declarations.
+func isLosslessConversion(from, to types.Type) bool {
+	if from == nil || to == nil {
+		return false
+	}
+
+	if types.Identical(from, to) {
+		// already handled by the assignability check
+		return false
+	}
+
+	if !types.Identical(from.Underlying(), to.Underlying()) {
+		return false
+	}
+
+	return types.ConvertibleTo(from, to)
+}
+
+// convertMapping emits a plain Go type conversion, e.g. `pkg.Target(input)`.
+func convertMapping(to *GoType) GeneratorFunc {
+	return func(ctx *FunctionContext, input jen.Code) jen.Code {
+		return to.qual().Call(input)
+	}
 }
 
 func ownMethodConverter(name string, hasError bool) GeneratorFunc {
