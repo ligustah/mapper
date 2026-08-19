@@ -49,6 +49,46 @@ func (m AdvancedMapperImpl) MapCustomConvertReverse(src *protos.CustomConvertExa
 	}, nil
 }
 
+func (m AdvancedMapperImpl) MapEnumExample(src *models.EnumExample) (*protos.EnumExampleProto, error) {
+	var tmp0 protos.VisibilityProto
+	switch src.Visibility {
+	case models.VisibilityUnspecified:
+		tmp0 = protos.VisibilityProtoUnspecified
+	case models.VisibilityPublic:
+		tmp0 = protos.VisibilityProtoPublic
+	case models.VisibilityPrivate:
+		tmp0 = protos.VisibilityProtoPrivate
+	default:
+		return nil, fmt.Errorf("unmapped value for field Visibility: %v", src.Visibility)
+	}
+
+	return &protos.EnumExampleProto{
+		ID:         src.ID,
+		Status:     protos.StatusProto(src.Status),
+		Visibility: tmp0,
+	}, nil
+}
+
+func (m AdvancedMapperImpl) MapEnumExampleReverse(src *protos.EnumExampleProto) (*models.EnumExample, error) {
+	var tmp0 models.Visibility
+	switch src.Visibility {
+	case protos.VisibilityProtoUnspecified:
+		tmp0 = models.VisibilityUnspecified
+	case protos.VisibilityProtoPublic:
+		tmp0 = models.VisibilityPublic
+	case protos.VisibilityProtoPrivate:
+		tmp0 = models.VisibilityPrivate
+	default:
+		return nil, fmt.Errorf("unmapped value for field Visibility: %v", src.Visibility)
+	}
+
+	return &models.EnumExample{
+		ID:         src.ID,
+		Status:     models.Status(src.Status),
+		Visibility: tmp0,
+	}, nil
+}
+
 func (m AdvancedMapperImpl) MapNamedSlice(src *models.NamedSliceExample) *protos.NamedSliceExampleProto {
 
 	return &protos.NamedSliceExampleProto{

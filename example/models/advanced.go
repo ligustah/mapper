@@ -43,3 +43,29 @@ type NamedSliceExample struct {
 
 // StringSlice is a named slice type
 type StringSlice []string
+
+// Status is a named string enum. Its values line up with protos.StatusProto, so a
+// conversion between the two is derived automatically without any annotation.
+type Status string
+
+const (
+	StatusActive   Status = "active"
+	StatusInactive Status = "inactive"
+)
+
+// Visibility is a named string enum whose counterpart uses different values, so a
+// mapping has to be spelled out with the map: directive
+type Visibility string
+
+const (
+	VisibilityUnspecified Visibility = ""
+	VisibilityPublic      Visibility = "public"
+	VisibilityPrivate     Visibility = "private"
+)
+
+// EnumExample demonstrates enum mapping
+type EnumExample struct {
+	ID         string
+	Status     Status
+	Visibility Visibility
+}

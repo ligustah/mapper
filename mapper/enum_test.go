@@ -122,6 +122,103 @@ func TestCheckEnumConversion(t *testing.T) {
 	}
 }
 
+func TestParseEnumMap(t *testing.T) {
+	tests := []struct {
+		name      string
+		directive string
+		want      []enumMapEntry
+		wantErr   bool
+	}{
+		{
+			name:      "single pair",
+			directive: "active=ENABLED",
+			want:      []enumMapEntry{{"active", "ENABLED"}},
+		},
+		{
+			name:      "several pairs with spaces",
+			directive: "active=ENABLED, retired = DISABLED ",
+			want:      []enumMapEntry{{"active", "ENABLED"}, {"retired", "DISABLED"}},
+		},
+		{
+			name:      "constant names",
+			directive: "StateActive=GalaxyStateEnabled",
+			want:      []enumMapEntry{{"StateActive", "GalaxyStateEnabled"}},
+		},
+		{
+			name:      "trailing comma is ignored",
+			directive: "active=ENABLED,",
+			want:      []enumMapEntry{{"active", "ENABLED"}},
+		},
+		{name: "missing separator", directive: "active", wantErr: true},
+		{name: "empty target", directive: "active=", wantErr: true},
+		{name: "empty source", directive: "=ENABLED", wantErr: true},
+		{name: "duplicate source", directive: "active=ENABLED,active=DISABLED", wantErr: true},
+		{name: "empty directive", directive: "", wantErr: true},
+		{name: "only separators", directive: ",,", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseEnumMap(tt.directive)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseEnumMap(%q) error = %v, wantErr %v", tt.directive, err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
+
+			if len(got) != len(tt.want) {
+				t.Fatalf("parseEnumMap(%q) = %v, want %v", tt.directive, got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("entry %d = %v, want %v", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestLookupEnumConstant(t *testing.T) {
+	stringEnum := enumType("ent/galaxy", "State", types.Typ[types.String],
+		constDef{"StateActive", str("active")}, constDef{"StateRetired", str("retired")})
+	intEnum := enumType("ent/galaxy", "Code", types.Typ[types.Int],
+		constDef{"CodeOK", num(1)})
+	plain := enumType("ent/galaxy", "Plain", types.Typ[types.String])
+
+	tests := []struct {
+		name       string
+		typ        types.Type
+		ref        string
+		wantName   string
+		wantFound  bool
+		wantIsEnum bool
+	}{
+		{"by constant name", stringEnum, "StateActive", "StateActive", true, true},
+		{"by value", stringEnum, "active", "StateActive", true, true},
+		{"by value, second constant", stringEnum, "retired", "StateRetired", true, true},
+		{"unknown reference", stringEnum, "nope", "", false, true},
+		{"value of a different constant kind", stringEnum, "1", "", false, true},
+		{"int enum by name", intEnum, "CodeOK", "CodeOK", true, true},
+		{"int enum by value", intEnum, "1", "CodeOK", true, true},
+		{"type without constants", plain, "anything", "", false, false},
+		{"unnamed type", types.Typ[types.String], "anything", "", false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, found, isEnum := lookupEnumConstant(tt.typ, tt.ref)
+			if found != tt.wantFound || isEnum != tt.wantIsEnum {
+				t.Fatalf("lookupEnumConstant(%q) found = %v, isEnum = %v, want %v, %v",
+					tt.ref, found, isEnum, tt.wantFound, tt.wantIsEnum)
+			}
+			if got.name != tt.wantName {
+				t.Errorf("lookupEnumConstant(%q) = %q, want %q", tt.ref, got.name, tt.wantName)
+			}
+		})
+	}
+}
+
 func TestNormalizeEnumName(t *testing.T) {
 	tests := []struct {
 		constName string

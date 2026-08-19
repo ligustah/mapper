@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/dave/jennifer/jen"
@@ -222,6 +223,18 @@ func (m *Generator) buildMapping(f *GoFunction) ([]*ResolvedMapping, error) {
 				}
 			}
 
+			// handle map: directive — switch over explicitly listed values
+			if options.mapping != "" {
+				mapping, err := m.buildEnumMapping(f, field, options.mapping)
+				if err != nil {
+					return nil, fmt.Errorf("field %s: %w", field.name, err)
+				}
+				if mapping != nil {
+					mappings = append(mappings, mapping)
+					continue
+				}
+			}
+
 			// handle using directive
 			if options.using != "" {
 				mapping, err := m.buildUsingMapping(f, field, options.using)
@@ -293,6 +306,177 @@ func (m *Generator) buildMapping(f *GoFunction) ([]*ResolvedMapping, error) {
 	}
 
 	return mappings, nil
+}
+
+// buildEnumMapping handles // field:F map:"a=X,b=Y" — generates a switch over the
+// source value that assigns the listed target value for each listed source value.
+// Both sides of a pair may be spelled as a constant name or as the literal value of
+// a constant, and the generated code always refers to the constant where one exists.
+//
+// Go enums are not closed types, a value outside the declared constants is always
+// representable, so the switch keeps a default branch that returns an error. That
+// makes the mapping fallible and the method therefore has to return an error.
+func (m *Generator) buildEnumMapping(f *GoFunction, field *GoField, directive string) (*ResolvedMapping, error) {
+	entries, err := parseEnumMap(directive)
+	if err != nil {
+		return nil, fmt.Errorf("map: %w", err)
+	}
+
+	source := field.name
+	if opts, ok := f.options[field.name]; ok && opts.from != "" {
+		source = opts.from
+	}
+
+	param, inputField := m.findField(f.inputs, source)
+	if inputField == nil {
+		return nil, fmt.Errorf("map: field %q not found in inputs", source)
+	}
+
+	srcType := inputField.typ()
+	dstType := field.typ
+
+	// the switch runs on the value level, pointers and slices are wrapped below
+	srcElem := elementType(srcType)
+	dstElem := elementType(dstType)
+
+	if srcType.Kind != dstType.Kind && srcType.Kind != BasicKind && dstType.Kind != BasicKind {
+		return nil, fmt.Errorf("map: cannot map %s to %s, the kinds do not line up", srcType, dstType)
+	}
+
+	cases := make([]enumSwitchCase, 0, len(entries))
+	covered := make(map[string]bool, len(entries))
+
+	for _, entry := range entries {
+		fromCode, fromConst, err := m.resolveEnumRef(srcElem, entry.from, "source")
+		if err != nil {
+			return nil, err
+		}
+
+		toCode, _, err := m.resolveEnumRef(dstElem, entry.to, "target")
+		if err != nil {
+			return nil, err
+		}
+
+		if fromConst != "" {
+			covered[fromConst] = true
+		}
+
+		cases = append(cases, enumSwitchCase{from: fromCode, to: toCode})
+	}
+
+	m.checkEnumMapCoverage(srcElem, dstElem, covered)
+
+	gen := enumSwitchMapping(dstElem, field.name, cases)
+
+	switch {
+	case srcType.Kind == PointerKind && dstType.Kind == PointerKind:
+		gen = mapPointerToPointer(dstElem, gen)
+	case srcType.Kind == SliceKind && dstType.Kind == SliceKind:
+		gen = sliceMapping(dstElem, gen)
+	case srcType.Kind == PointerKind || dstType.Kind == PointerKind ||
+		srcType.Kind == SliceKind || dstType.Kind == SliceKind:
+		return nil, fmt.Errorf("map: cannot map %s to %s, both sides need to be values, pointers or slices", srcType, dstType)
+	}
+
+	return &ResolvedMapping{
+		output:    field,
+		input:     jen.Id(param.name).Op(".").Add(inputField.id()),
+		generator: gen,
+		canFail:   true,
+	}, nil
+}
+
+// resolveEnumRef turns one side of a `map:` pair into the code to emit for it. A
+// reference to a constant of the type is emitted as that constant, so the generated
+// code stays readable and keeps following the constant if its value ever changes.
+// For types that declare no constants the reference is emitted as a literal.
+func (m *Generator) resolveEnumRef(typ *GoType, ref string, side string) (jen.Code, string, error) {
+	c, found, isEnum := lookupEnumConstant(typ.Raw, ref)
+	if found {
+		return jen.Qual(typ.Pkg, c.name), c.name, nil
+	}
+
+	if isEnum {
+		return nil, "", fmt.Errorf("map: %s %q is neither the name nor the value of a constant of %s, declared are: %s",
+			side, ref, typ, strings.Join(enumConstantNames(typ.Raw), ", "))
+	}
+
+	literal, err := typeLiteral(typ, ref)
+	if err != nil {
+		return nil, "", fmt.Errorf("map: %s %q: %w", side, ref, err)
+	}
+
+	return literal, "", nil
+}
+
+// checkEnumMapCoverage reports source constants a `map:` directive does not list.
+// The generated switch handles them through its error branch, so this is about
+// noticing a value that was forgotten rather than deliberately left out.
+func (m *Generator) checkEnumMapCoverage(from, to *GoType, covered map[string]bool) {
+	names := enumConstantNames(from.Raw)
+	if len(names) == 0 {
+		return
+	}
+
+	var uncovered []string
+	for _, name := range names {
+		if !covered[name] {
+			uncovered = append(uncovered, name)
+		}
+	}
+
+	if len(uncovered) == 0 {
+		return
+	}
+
+	message := fmt.Sprintf("enum mismatch converting %s to %s: not listed in map: %s",
+		from, to, strings.Join(uncovered, ", "))
+
+	if m.strictEnums {
+		m.enumProblems = append(m.enumProblems, message)
+		return
+	}
+
+	log.Printf("warning: %s", message)
+}
+
+// elementType unwraps a pointer or slice to the type the switch runs on.
+func elementType(typ *GoType) *GoType {
+	if (typ.Kind == PointerKind || typ.Kind == SliceKind) && typ.Element != nil {
+		return typ.Element
+	}
+
+	return typ
+}
+
+// typeLiteral emits a literal of the given type, used for `map:` references to
+// types that declare no constants of their own.
+func typeLiteral(typ *GoType, ref string) (jen.Code, error) {
+	basic, ok := typ.Raw.Underlying().(*types.Basic)
+	if !ok {
+		return nil, fmt.Errorf("%s has no constants to refer to", typ)
+	}
+
+	var lit jen.Code
+	switch {
+	case basic.Info()&types.IsString != 0:
+		lit = jen.Lit(ref)
+	case basic.Info()&types.IsInteger != 0:
+		value, err := strconv.ParseInt(ref, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("not a valid integer for %s", typ)
+		}
+		lit = jen.Lit(int(value))
+	default:
+		return nil, fmt.Errorf("unsupported type %s, expected a string or integer", typ)
+	}
+
+	// an untyped literal is not assignable to a named type, so convert it
+	if _, named := typ.Raw.(*types.Named); named {
+		return typ.qual().Call(lit), nil
+	}
+
+	return lit, nil
 }
 
 // buildMethodMapping handles // field:F method:"MethodName" — calls MethodName() on the source
@@ -932,6 +1116,35 @@ func arrayMapping(targetType *GoType, gen GeneratorFunc) GeneratorFunc {
 
 func identityMapping(ctx *FunctionContext, input jen.Code) jen.Code {
 	return input
+}
+
+// enumSwitchCase is one branch of a generated `map:` switch.
+type enumSwitchCase struct {
+	from jen.Code
+	to   jen.Code
+}
+
+// enumSwitchMapping emits a switch over the input that assigns the mapped value for
+// every listed case, and returns an error for anything else.
+func enumSwitchMapping(target *GoType, fieldName string, cases []enumSwitchCase) GeneratorFunc {
+	return func(ctx *FunctionContext, input jen.Code) jen.Code {
+		tmp := ctx.tmpVar()
+
+		ctx.add(jen.Var().Id(tmp).Add(target.qual()).Line())
+
+		ctx.add(jen.Switch(input).BlockFunc(func(group *jen.Group) {
+			for _, c := range cases {
+				group.Case(c.from).Block(jen.Id(tmp).Op("=").Add(c.to))
+			}
+
+			fmtString := jen.Lit(fmt.Sprintf("unmapped value for field %s: %%v", fieldName))
+			group.Default().Block(
+				jen.Return(ctx.targetType.zero(), jen.Qual("fmt", "Errorf").Call(fmtString, input)),
+			)
+		}).Line().Line())
+
+		return jen.Id(tmp)
+	}
 }
 
 // isLosslessConversion reports whether `from` can be turned into `to` with a plain

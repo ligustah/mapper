@@ -68,4 +68,14 @@ type AdvancedMapper interface {
 	MapNamedSlice(src *models.NamedSliceExample) *protos.NamedSliceExampleProto
 
 	MapNamedSliceReverse(src *protos.NamedSliceExampleProto) *models.NamedSliceExample
+
+	// Status needs no annotation, both sides are named string types declaring the
+	// same values, so the conversion is derived. Visibility is numbered on the proto
+	// side, so the values are listed explicitly. Either side of a pair can be spelled
+	// as the name of a constant or as its value.
+	// field:Visibility map:"VisibilityUnspecified=VisibilityProtoUnspecified,public=VisibilityProtoPublic,private=VisibilityProtoPrivate"
+	MapEnumExample(src *models.EnumExample) (*protos.EnumExampleProto, error)
+
+	// field:Visibility map:"VisibilityProtoUnspecified=VisibilityUnspecified,VisibilityProtoPublic=public,VisibilityProtoPrivate=private"
+	MapEnumExampleReverse(src *protos.EnumExampleProto) (*models.EnumExample, error)
 }

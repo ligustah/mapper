@@ -1,6 +1,7 @@
 package mapper
 
 import (
+	"errors"
 	"fmt"
 	"go/constant"
 	"go/types"
@@ -118,6 +119,104 @@ func checkEnumConversion(from, to types.Type) []string {
 	}
 
 	return problems
+}
+
+// enumMapEntry is one `source=target` pair of a `map:` directive.
+type enumMapEntry struct {
+	from string
+	to   string
+}
+
+// parseEnumMap parses the value of a `map:"a=X,b=Y"` directive. Both sides of a
+// pair may be a constant name or the literal value of a constant.
+func parseEnumMap(directive string) ([]enumMapEntry, error) {
+	var entries []enumMapEntry
+
+	seen := make(map[string]bool)
+	for _, pair := range strings.Split(directive, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+
+		from, to, ok := strings.Cut(pair, "=")
+		if !ok {
+			return nil, fmt.Errorf("expected pairs of the form source=target, got %q", pair)
+		}
+
+		from = strings.TrimSpace(from)
+		to = strings.TrimSpace(to)
+
+		if from == "" || to == "" {
+			return nil, fmt.Errorf("both sides of %q must be non-empty", pair)
+		}
+
+		if seen[from] {
+			return nil, fmt.Errorf("duplicate source value %q", from)
+		}
+		seen[from] = true
+
+		entries = append(entries, enumMapEntry{from: from, to: to})
+	}
+
+	if len(entries) == 0 {
+		return nil, errors.New("no mappings given")
+	}
+
+	return entries, nil
+}
+
+// lookupEnumConstant resolves a reference from a `map:` directive against the
+// constants of a type. A reference matches either the name of a constant or its
+// literal value, so both `StateActive` and `active` find the same constant. The
+// second return value reports whether the type declares constants at all.
+func lookupEnumConstant(typ types.Type, ref string) (enumConstant, bool, bool) {
+	consts := enumConstants(typ)
+	if len(consts) == 0 {
+		return enumConstant{}, false, false
+	}
+
+	for _, c := range consts {
+		if c.name == ref {
+			return c, true, true
+		}
+	}
+
+	for _, c := range consts {
+		if constantMatchesLiteral(c.value, ref) {
+			return c, true, true
+		}
+	}
+
+	return enumConstant{}, false, true
+}
+
+// constantMatchesLiteral compares a constant against the literal spelling used in
+// a directive, e.g. the value `"active"` against the reference `active`.
+func constantMatchesLiteral(value constant.Value, ref string) bool {
+	switch value.Kind() {
+	case constant.String:
+		return constant.StringVal(value) == ref
+	case constant.Int, constant.Float:
+		return value.ExactString() == ref
+	default:
+		return false
+	}
+}
+
+// enumConstantNames returns the names of the constants declared for a type.
+func enumConstantNames(typ types.Type) []string {
+	consts := enumConstants(typ)
+	if len(consts) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(consts))
+	for _, c := range consts {
+		names = append(names, c.name)
+	}
+
+	return names
 }
 
 // typeObjName returns the declared name of a named type, or an empty string.

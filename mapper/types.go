@@ -133,9 +133,10 @@ type GoParameter struct {
 }
 
 type FieldOptions struct {
-	from   string
-	using  string
-	method string
+	from    string
+	using   string
+	method  string
+	mapping string
 }
 
 type GoKind int

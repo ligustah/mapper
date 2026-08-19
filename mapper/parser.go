@@ -1,6 +1,7 @@
 package mapper
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -9,6 +10,7 @@ import (
 	"go/types"
 	"log"
 	"reflect"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -74,6 +76,16 @@ func (p *Parser) Parse(dir string, patterns ...string) ([]*GoInterface, error) {
 	for _, pkg := range pkgs {
 		interfaces = append(interfaces, p.parsePackage(pkg)...)
 	}
+
+	// interfaces are discovered by walking a map, sort them so that generation, and
+	// with it the generated file, does not depend on iteration order
+	slices.SortStableFunc(interfaces, func(a, b *GoInterface) int {
+		if c := cmp.Compare(a.Pkg, b.Pkg); c != 0 {
+			return c
+		}
+
+		return cmp.Compare(a.Name, b.Name)
+	})
 
 	return interfaces, nil
 }
@@ -197,6 +209,7 @@ func (p *Parser) getGoFunction(method *types.Func, f funcDoc) (*GoFunction, erro
 				goFunc.options[fieldName].from = tag.Get("from")
 				goFunc.options[fieldName].using = tag.Get("using")
 				goFunc.options[fieldName].method = tag.Get("method")
+				goFunc.options[fieldName].mapping = tag.Get("map")
 			}
 		}
 	}

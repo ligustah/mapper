@@ -77,6 +77,7 @@ The main entry point is `main.go`, which parses a package and generates mapper i
 **Enum Compatibility (`mapper/enum.go`)**
 - Collects the constants declared for a named type from its package scope
 - Compares both sides of a generated type conversion, reporting source constants the target does not declare and constants whose name matches a target constant with a different value
+- Parses `map:` directives and resolves each side to a constant by name or by value
 - Only warns by default, `-strict-enums` / `Generator.SetStrictEnums()` makes it an error
 
 ### Code Generation Flow
@@ -103,6 +104,31 @@ In method doc comments:
 - `// field:TargetField from:"."` - Map directly from the input type itself
 - `// field:TargetField from:"-"` - Ignore/skip this field
 - `// field:TargetField using:"pkg.CustomFunc"` - Use a custom converter function
+- `// field:TargetField method:"MethodName"` - Call a no-argument method on the source value
+- `// field:TargetField map:"a=X,b=Y"` - Map listed values explicitly (see below)
+
+### Enum Mapping
+
+Two named types that declare the same values need no annotation, the generator emits
+a direct conversion. When the values differ, list them with `map:`:
+
+```go
+// field:Visibility map:"public=VisibilityProtoPublic,private=VisibilityProtoPrivate"
+MapEnumExample(src *models.EnumExample) (*protos.EnumExampleProto, error)
+```
+
+Either side of a pair is spelled as the name of a constant or as its value, and the
+generated code refers to the constant wherever one exists, so it keeps following that
+constant if its value changes later. The two sides do not need the same underlying
+type, which is how a string enum maps onto a numbered one.
+
+The directive generates a switch. Go enums are not closed types, so a value outside
+the declared constants is always representable and the switch keeps a `default`
+branch returning an error — a mapped field therefore requires the method to return
+`error`. Source constants missing from the directive are reported the same way as
+other enum problems: a warning, or an error under `-strict-enums`.
+
+Works on plain fields, on `*T` → `*U` (nil stays nil) and on `[]T` → `[]U`.
 
 ## Custom Mappers
 
@@ -121,6 +147,15 @@ The `example/` directory demonstrates usage:
 - `example/gen/`: Generated implementation code (created by running `./mapper ./example`)
 - `example/models/`: Source structs (database models)
 - `example/protos/`: Target structs (protobuf messages)
+
+## Determinism
+
+Regenerating an unchanged package produces a byte-identical file. Interfaces are
+discovered by walking `pkg.TypesInfo.Defs`, which is a map, so `Parser.Parse()`
+sorts them by package path and name before returning; methods within an interface
+already come back sorted by `go/types`. `TestParseOrderIsStable` guards this — a
+change that reintroduces map iteration order makes the generated file reshuffle
+between runs.
 
 ## Important Notes
 

@@ -38,3 +38,27 @@ type NamedSliceExampleProto struct {
 	ID    string
 	Items []string
 }
+
+// StatusProto declares the same values as models.Status
+type StatusProto string
+
+const (
+	StatusProtoActive   StatusProto = "active"
+	StatusProtoInactive StatusProto = "inactive"
+)
+
+// VisibilityProto is numbered rather than named like models.Visibility
+type VisibilityProto int32
+
+const (
+	VisibilityProtoUnspecified VisibilityProto = 0
+	VisibilityProtoPublic      VisibilityProto = 1
+	VisibilityProtoPrivate     VisibilityProto = 2
+)
+
+// EnumExampleProto demonstrates enum mapping
+type EnumExampleProto struct {
+	ID         string
+	Status     StatusProto
+	Visibility VisibilityProto
+}
