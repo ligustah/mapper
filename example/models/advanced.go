@@ -28,6 +28,13 @@ type ArrayExample struct {
 	Name string
 }
 
+// ArrayConvertExample demonstrates a fixed-size array whose elements need a
+// conversion, rather than being assignable as they are
+type ArrayConvertExample struct {
+	ID     string
+	Values [3]int
+}
+
 // CustomConvertExample demonstrates the using: directive
 type CustomConvertExample struct {
 	ID        string
@@ -68,4 +75,29 @@ type EnumExample struct {
 	ID         string
 	Status     Status
 	Visibility Visibility
+}
+
+// Item is the element of a slice of pointers
+type Item struct {
+	Name  string
+	Count int
+}
+
+// PointerSliceExample demonstrates a repeated field of pointers, the shape a
+// protobuf `repeated Item` message field takes on the Go side
+type PointerSliceExample struct {
+	ID    string
+	Items []*Item
+}
+
+// Snapshot is a named struct handed to a converter through the using: directive
+type Snapshot struct {
+	ID   string
+	Tick int64
+}
+
+// SnapshotExample demonstrates using: with a converter over a named struct
+type SnapshotExample struct {
+	ID       string
+	Snapshot *Snapshot
 }

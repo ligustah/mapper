@@ -263,6 +263,35 @@ func (g *GoType) qual() *jen.Statement {
 	return jen.Qual(g.Pkg, g.Name)
 }
 
+// ref renders the type as it is spelled in Go source, including any pointer, slice,
+// array or map wrapping around a named type. qual() only names the named type
+// itself and drops that wrapping, so it is correct only where the caller spells the
+// indirection out.
+func (g *GoType) ref() *jen.Statement {
+	// Name carries the name of the nearest named type, which for `*T`, `[]T` and
+	// `[N]T` is the element's, so it only spells this type if this type is the
+	// defined one. A defined type is spelled by its name whatever its shape.
+	if _, defined := g.Raw.(*types.Named); !defined {
+		switch g.Kind {
+		case PointerKind:
+			return jen.Op("*").Add(g.Element.ref())
+		case SliceKind:
+			return jen.Index().Add(g.Element.ref())
+		case ArrayKind:
+			length := 0
+			if arr, ok := g.Raw.(*types.Array); ok {
+				length = int(arr.Len())
+			}
+
+			return jen.Index(jen.Lit(length)).Add(g.Element.ref())
+		case MapKind:
+			return jen.Map(g.Key.ref()).Add(g.Value.ref())
+		}
+	}
+
+	return jen.Qual(g.Pkg, g.Name)
+}
+
 func (g *GoType) pointer() *GoType {
 	ptr := types.NewPointer(g.Raw)
 	return &GoType{
@@ -273,6 +302,36 @@ func (g *GoType) pointer() *GoType {
 		TypeName: types.TypeString(ptr, nil),
 		Element:  g,
 	}
+}
+
+// arrayLen returns the number of elements of an array type, or -1 for anything
+// that is not one. Two arrays only map onto each other if they are the same length,
+// the generated loop runs over the source and writes into the target.
+func arrayLen(g *GoType) int64 {
+	if g == nil || g.Raw == nil {
+		return -1
+	}
+
+	if arr, ok := g.Raw.Underlying().(*types.Array); ok {
+		return arr.Len()
+	}
+
+	return -1
+}
+
+// assignableTo reports whether a value of `from` can be assigned to `to`.
+//
+// Types that come out of two different packages.Load calls have distinct identities
+// even when they name the same declaration, and go/types compares named types by
+// identity, so a `using:` converter loaded on its own never matches the interface's
+// own view of a named type. Fall back to comparing the fully qualified names, which
+// name the same declaration across loads.
+func assignableTo(from, to types.Type) bool {
+	if types.AssignableTo(from, to) {
+		return true
+	}
+
+	return types.TypeString(from, nil) == types.TypeString(to, nil)
 }
 
 func splitPackageAndType(name string) (canonical string, pkg string, typeName, methodName string, pointer bool, err error) {

@@ -35,6 +35,7 @@ func NewGenerator(pkg string, dir string) *Generator {
 		mappings:         map[string]*TypeMapping{},
 		graph:            NewTypeGraph(),
 		registeredEnums:  make(map[string]bool),
+		usingPkgs:        map[string]*packages.Package{},
 		checkedEnumPairs: make(map[string]bool),
 	}
 
@@ -53,6 +54,7 @@ type Generator struct {
 	mappings        map[string]*TypeMapping
 	graph           *TypeGraph
 	registeredEnums map[string]bool
+	usingPkgs       map[string]*packages.Package // packages loaded for `using:` references
 
 	strictEnums      bool
 	checkedEnumPairs map[string]bool
@@ -554,15 +556,16 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 	}, nil
 }
 
-func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using string) (*ResolvedMapping, error) {
-	// parse the function reference
-	_, pkgPath, typeName, methodName, _, err := splitPackageAndType(using)
-	if err != nil {
-		return nil, fmt.Errorf("invalid using reference %q: %w", using, err)
+// loadUsingPackage loads the package a `using:` reference points at. Loading happens
+// from the source dir, so references resolve against the target module's
+// dependencies rather than the generator's own module. Results are cached: every
+// load is a full type check of the package and its imports, and two references into
+// the same package should also come back as the same types.
+func (m *Generator) loadUsingPackage(pkgPath string) (*packages.Package, error) {
+	if pkg, ok := m.usingPkgs[pkgPath]; ok {
+		return pkg, nil
 	}
 
-	// load the package using the source dir so `using:` references resolve
-	// against the target module's dependencies, not the generator's module.
 	pkgs, err := packages.Load(&packages.Config{
 		Mode: packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo,
 		Dir:  m.srcDir,
@@ -574,7 +577,23 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 		return nil, fmt.Errorf("expected one package, got %d", len(pkgs))
 	}
 
-	pkg := pkgs[0]
+	m.usingPkgs[pkgPath] = pkgs[0]
+
+	return pkgs[0], nil
+}
+
+func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using string) (*ResolvedMapping, error) {
+	// parse the function reference
+	_, pkgPath, typeName, methodName, _, err := splitPackageAndType(using)
+	if err != nil {
+		return nil, fmt.Errorf("invalid using reference %q: %w", using, err)
+	}
+
+	pkg, err := m.loadUsingPackage(pkgPath)
+	if err != nil {
+		return nil, err
+	}
+
 	var funcSig *types.Signature
 
 	if methodName != "" {
@@ -657,8 +676,8 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 	if f.options[field.name] != nil && f.options[field.name].from == "." {
 		// try to find a matching input
 		for _, input := range f.inputs {
-			if types.AssignableTo(input.typ.Raw, funcInputType.Raw) ||
-				(input.typ.Kind == PointerKind && types.AssignableTo(input.typ.Element.Raw, funcInputType.Raw)) {
+			if assignableTo(input.typ.Raw, funcInputType.Raw) ||
+				(input.typ.Kind == PointerKind && assignableTo(input.typ.Element.Raw, funcInputType.Raw)) {
 				inputParam = input
 				inputExpr = jen.Id(input.name)
 				sourceFieldType = input.typ
@@ -794,10 +813,10 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 		}
 	}
 
-	if from.Kind == ArrayKind && to.Kind == ArrayKind {
+	if from.Kind == ArrayKind && to.Kind == ArrayKind && arrayLen(from) == arrayLen(to) {
 		gen, canFail := m.buildGenerator(from.Element, to.Element)
 		if gen != nil {
-			return arrayMapping(to.Element, gen), canFail
+			return arrayMapping(to, gen), canFail
 		}
 	}
 
@@ -976,7 +995,7 @@ func mapPointerToPointer(targetElem *GoType, gen GeneratorFunc) GeneratorFunc {
 		outVar := ctx.tmpVar()
 		inVar := ctx.tmpVar()
 
-		ctx.add(jen.Var().Id(outVar).Op("*").Add(targetElem.qual()).Line())
+		ctx.add(jen.Var().Id(outVar).Op("*").Add(targetElem.ref()).Line())
 
 		subCtx := &FunctionContext{
 			targetType: ctx.targetType,
@@ -1013,7 +1032,7 @@ func mapFromPointer(gen GeneratorFunc, typ *GoType) GeneratorFunc {
 	return func(ctx *FunctionContext, input jen.Code) jen.Code {
 		tmpVar := ctx.tmpVar()
 
-		ctx.add(jen.Var().Id(tmpVar).Add(typ.qual()).Line())
+		ctx.add(jen.Var().Id(tmpVar).Add(typ.ref()).Line())
 		ctx.add(jen.If(input).Op("!=").Nil().Block(
 			jen.Id(tmpVar).Op("=").Op("*").Parens(input),
 		).Line().Line())
@@ -1026,7 +1045,7 @@ func sliceMapping(targetType *GoType, gen GeneratorFunc) GeneratorFunc {
 	return func(ctx *FunctionContext, input jen.Code) jen.Code {
 		tmpVar := ctx.tmpVar()
 
-		initializer := jen.Id(tmpVar).Op(":=").Make(jen.List(jen.Op("[]").Add(targetType.qual()), jen.Len(input)))
+		initializer := jen.Id(tmpVar).Op(":=").Make(jen.List(jen.Index().Add(targetType.ref()), jen.Len(input)))
 
 		subCtx := &FunctionContext{
 			targetType: ctx.targetType,
@@ -1056,7 +1075,7 @@ func mapMapping(targetKey, targetValue *GoType, keyGen, valueGen GeneratorFunc) 
 	return func(ctx *FunctionContext, input jen.Code) jen.Code {
 		tmpVar := ctx.tmpVar()
 
-		mapType := jen.Map(jen.Add(targetKey.qual())).Add(targetValue.qual())
+		mapType := jen.Map(jen.Add(targetKey.ref())).Add(targetValue.ref())
 		initializer := jen.Id(tmpVar).Op(":=").Make(mapType)
 
 		subCtx := &FunctionContext{
@@ -1084,11 +1103,14 @@ func mapMapping(targetKey, targetValue *GoType, keyGen, valueGen GeneratorFunc) 
 	}
 }
 
+// arrayMapping maps every element of a fixed-size array. targetType is the array
+// type, not its element: an array cannot be made, and a slice would not be
+// assignable to the array field, so the temporary is declared as the array itself.
 func arrayMapping(targetType *GoType, gen GeneratorFunc) GeneratorFunc {
 	return func(ctx *FunctionContext, input jen.Code) jen.Code {
 		tmpVar := ctx.tmpVar()
 
-		initializer := jen.Id(tmpVar).Op(":=").Make(jen.List(jen.Op("[]").Add(targetType.qual()), jen.Len(input)))
+		initializer := jen.Var().Id(tmpVar).Add(targetType.ref())
 
 		subCtx := &FunctionContext{
 			targetType: ctx.targetType,
@@ -1130,7 +1152,7 @@ func enumSwitchMapping(target *GoType, fieldName string, cases []enumSwitchCase)
 	return func(ctx *FunctionContext, input jen.Code) jen.Code {
 		tmp := ctx.tmpVar()
 
-		ctx.add(jen.Var().Id(tmp).Add(target.qual()).Line())
+		ctx.add(jen.Var().Id(tmp).Add(target.ref()).Line())
 
 		ctx.add(jen.Switch(input).BlockFunc(func(group *jen.Group) {
 			for _, c := range cases {

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ligustah/mapper/example/converters"
 	"github.com/ligustah/mapper/example/models"
 	"github.com/ligustah/mapper/example/protos"
 )
@@ -209,5 +210,80 @@ func TestAdvancedMapper_MapNamedSlice(t *testing.T) {
 		if item != string(src.Items[i]) {
 			t.Errorf("Items[%d] mismatch: got %v, want %v", i, item, src.Items[i])
 		}
+	}
+}
+
+// TestAdvancedMapper_MapPointerSlice covers a repeated message field, where the
+// elements stay pointers on both sides
+func TestAdvancedMapper_MapPointerSlice(t *testing.T) {
+	m := AdvancedMapperImpl{}
+
+	src := &models.PointerSliceExample{
+		ID: "list-1",
+		Items: []*models.Item{
+			{Name: "first", Count: 1},
+			{Name: "second", Count: 2},
+		},
+	}
+
+	proto := m.MapPointerSlice(src)
+
+	if proto.ID != src.ID {
+		t.Errorf("ID mismatch: got %v, want %v", proto.ID, src.ID)
+	}
+	if len(proto.Items) != len(src.Items) {
+		t.Fatalf("Items length mismatch: got %v, want %v", len(proto.Items), len(src.Items))
+	}
+
+	for i, item := range proto.Items {
+		if item == nil {
+			t.Fatalf("Items[%d] is nil", i)
+		}
+		if item.Name != src.Items[i].Name {
+			t.Errorf("Items[%d].Name mismatch: got %v, want %v", i, item.Name, src.Items[i].Name)
+		}
+		if item.Count != int32(src.Items[i].Count) {
+			t.Errorf("Items[%d].Count mismatch: got %v, want %v", i, item.Count, src.Items[i].Count)
+		}
+	}
+}
+
+// TestAdvancedMapper_MapSnapshotExample covers using: converters that take a named
+// struct the generator has to resolve out of a separately loaded package
+func TestAdvancedMapper_MapSnapshotExample(t *testing.T) {
+	m := AdvancedMapperImpl{}
+
+	src := &models.SnapshotExample{
+		ID:       "snap-1",
+		Snapshot: &models.Snapshot{ID: "inner", Tick: 42},
+	}
+
+	proto := m.MapSnapshotExample(src)
+
+	if proto.ID != src.ID {
+		t.Errorf("ID mismatch: got %v, want %v", proto.ID, src.ID)
+	}
+	if want := converters.SummarizeSnapshot(src.Snapshot); proto.Summary != want {
+		t.Errorf("Summary mismatch: got %v, want %v", proto.Summary, want)
+	}
+	if want := converters.DigestExample(src); proto.Digest != want {
+		t.Errorf("Digest mismatch: got %v, want %v", proto.Digest, want)
+	}
+}
+
+// TestAdvancedMapper_MapArrayConvert covers a fixed-size array whose elements need
+// a conversion, so the array is rebuilt element by element
+func TestAdvancedMapper_MapArrayConvert(t *testing.T) {
+	m := AdvancedMapperImpl{}
+
+	src := &models.ArrayConvertExample{ID: "arr-1", Values: [3]int{1, 2, 3}}
+
+	proto := m.MapArrayConvert(src)
+
+	if proto.ID != src.ID {
+		t.Errorf("ID mismatch: got %v, want %v", proto.ID, src.ID)
+	}
+	if want := [3]int32{1, 2, 3}; proto.Values != want {
+		t.Errorf("Values mismatch: got %v, want %v", proto.Values, want)
 	}
 }

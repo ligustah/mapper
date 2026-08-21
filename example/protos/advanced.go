@@ -26,6 +26,12 @@ type ArrayExampleProto struct {
 	Name string
 }
 
+// ArrayConvertExampleProto demonstrates a fixed-size array of converted elements
+type ArrayConvertExampleProto struct {
+	ID     string
+	Values [3]int32
+}
+
 // CustomConvertExampleProto demonstrates the using: directive
 type CustomConvertExampleProto struct {
 	ID        string
@@ -61,4 +67,23 @@ type EnumExampleProto struct {
 	ID         string
 	Status     StatusProto
 	Visibility VisibilityProto
+}
+
+// ItemProto is the element of a repeated field
+type ItemProto struct {
+	Name  string
+	Count int32
+}
+
+// PointerSliceExampleProto demonstrates a repeated message field
+type PointerSliceExampleProto struct {
+	ID    string
+	Items []*ItemProto
+}
+
+// SnapshotExampleProto demonstrates using: with a converter over a named struct
+type SnapshotExampleProto struct {
+	ID      string
+	Summary string
+	Digest  string
 }

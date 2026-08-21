@@ -59,6 +59,9 @@ type AdvancedMapper interface {
 
 	MapArrayExampleReverse(src *protos.ArrayExampleProto) *models.ArrayExample
 
+	// the elements are not assignable as they are, so every one of them is converted
+	MapArrayConvert(src *models.ArrayConvertExample) *protos.ArrayConvertExampleProto
+
 	// field:Timestamp using:"github.com/ligustah/mapper/example.ConvertTimestamp"
 	MapCustomConvert(src *models.CustomConvertExample) *protos.CustomConvertExampleProto
 
@@ -78,4 +81,16 @@ type AdvancedMapper interface {
 
 	// field:Visibility map:"VisibilityProtoUnspecified=VisibilityUnspecified,VisibilityProtoPublic=public,VisibilityProtoPrivate=private"
 	MapEnumExampleReverse(src *protos.EnumExampleProto) (*models.EnumExample, error)
+
+	MapItem(item *models.Item) *protos.ItemProto
+
+	// Items is []*models.Item on one side and []*protos.ItemProto on the other, the
+	// shape a repeated message field takes, so the elements stay pointers
+	MapPointerSlice(src *models.PointerSliceExample) *protos.PointerSliceExampleProto
+
+	// Both converters take a named struct this package already names, from a package
+	// the generator loads on its own: one off a field, one off the whole input
+	// field:Summary from:"Snapshot" using:"github.com/ligustah/mapper/example/converters.SummarizeSnapshot"
+	// field:Digest from:"." using:"github.com/ligustah/mapper/example/converters.DigestExample"
+	MapSnapshotExample(src *models.SnapshotExample) *protos.SnapshotExampleProto
 }

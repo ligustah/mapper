@@ -3,11 +3,24 @@ package gen
 import (
 	"fmt"
 	example "github.com/ligustah/mapper/example"
+	converters "github.com/ligustah/mapper/example/converters"
 	models "github.com/ligustah/mapper/example/models"
 	protos "github.com/ligustah/mapper/example/protos"
 	null "github.com/volatiletech/null"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func (m AdvancedMapperImpl) MapArrayConvert(src *models.ArrayConvertExample) *protos.ArrayConvertExampleProto {
+	var tmp0 [3]int32
+	for i := range src.Values {
+		tmp0[i] = int32(src.Values[i])
+	}
+
+	return &protos.ArrayConvertExampleProto{
+		ID:     src.ID,
+		Values: tmp0,
+	}
+}
 
 func (m AdvancedMapperImpl) MapArrayExample(src *models.ArrayExample) *protos.ArrayExampleProto {
 
@@ -89,6 +102,14 @@ func (m AdvancedMapperImpl) MapEnumExampleReverse(src *protos.EnumExampleProto) 
 	}, nil
 }
 
+func (m AdvancedMapperImpl) MapItem(item *models.Item) *protos.ItemProto {
+
+	return &protos.ItemProto{
+		Name:  item.Name,
+		Count: int32(item.Count),
+	}
+}
+
 func (m AdvancedMapperImpl) MapNamedSlice(src *models.NamedSliceExample) *protos.NamedSliceExampleProto {
 
 	return &protos.NamedSliceExampleProto{
@@ -102,6 +123,27 @@ func (m AdvancedMapperImpl) MapNamedSliceReverse(src *protos.NamedSliceExamplePr
 	return &models.NamedSliceExample{
 		ID:    src.ID,
 		Items: src.Items,
+	}
+}
+
+func (m AdvancedMapperImpl) MapPointerSlice(src *models.PointerSliceExample) *protos.PointerSliceExampleProto {
+	tmp0 := make([]*protos.ItemProto, len(src.Items))
+	for i := range src.Items {
+		tmp0[i] = m.MapItem(src.Items[i])
+	}
+
+	return &protos.PointerSliceExampleProto{
+		ID:    src.ID,
+		Items: tmp0,
+	}
+}
+
+func (m AdvancedMapperImpl) MapSnapshotExample(src *models.SnapshotExample) *protos.SnapshotExampleProto {
+
+	return &protos.SnapshotExampleProto{
+		ID:      src.ID,
+		Summary: converters.SummarizeSnapshot(src.Snapshot),
+		Digest:  converters.DigestExample(src),
 	}
 }
 
