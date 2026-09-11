@@ -93,4 +93,12 @@ type AdvancedMapper interface {
 	// field:Summary from:"Snapshot" using:"github.com/ligustah/mapper/example/converters.SummarizeSnapshot"
 	// field:Digest from:"." using:"github.com/ligustah/mapper/example/converters.DigestExample"
 	MapSnapshotExample(src *models.SnapshotExample) *protos.SnapshotExampleProto
+
+	MapDetail(detail models.Detail) protos.DetailProto
+
+	// Detail is *models.Detail on one side and *protos.DetailProto on the other, but
+	// only a value method exists for the pair, so the generator wraps it in a nil
+	// check and a nil field stays nil. Item has a pointer method, that one is called
+	// as it is and guards nil itself.
+	MapOptionalExample(src *models.OptionalExample) *protos.OptionalExampleProto
 }

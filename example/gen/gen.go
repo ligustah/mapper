@@ -11,6 +11,9 @@ import (
 )
 
 func (m AdvancedMapperImpl) MapArrayConvert(src *models.ArrayConvertExample) *protos.ArrayConvertExampleProto {
+	if src == nil {
+		return nil
+	}
 	var tmp0 [3]int32
 	for i := range src.Values {
 		tmp0[i] = int32(src.Values[i])
@@ -23,6 +26,9 @@ func (m AdvancedMapperImpl) MapArrayConvert(src *models.ArrayConvertExample) *pr
 }
 
 func (m AdvancedMapperImpl) MapArrayExample(src *models.ArrayExample) *protos.ArrayExampleProto {
+	if src == nil {
+		return nil
+	}
 
 	return &protos.ArrayExampleProto{
 		ID:   src.ID,
@@ -32,6 +38,9 @@ func (m AdvancedMapperImpl) MapArrayExample(src *models.ArrayExample) *protos.Ar
 }
 
 func (m AdvancedMapperImpl) MapArrayExampleReverse(src *protos.ArrayExampleProto) *models.ArrayExample {
+	if src == nil {
+		return nil
+	}
 
 	return &models.ArrayExample{
 		ID:   src.ID,
@@ -41,6 +50,9 @@ func (m AdvancedMapperImpl) MapArrayExampleReverse(src *protos.ArrayExampleProto
 }
 
 func (m AdvancedMapperImpl) MapCustomConvert(src *models.CustomConvertExample) *protos.CustomConvertExampleProto {
+	if src == nil {
+		return nil
+	}
 
 	return &protos.CustomConvertExampleProto{
 		ID:        src.ID,
@@ -50,6 +62,9 @@ func (m AdvancedMapperImpl) MapCustomConvert(src *models.CustomConvertExample) *
 }
 
 func (m AdvancedMapperImpl) MapCustomConvertReverse(src *protos.CustomConvertExampleProto) (*models.CustomConvertExample, error) {
+	if src == nil {
+		return nil, nil
+	}
 	tmp0, err := example.ParseTimestamp(src.Timestamp)
 	if err != nil {
 		return nil, err
@@ -62,7 +77,18 @@ func (m AdvancedMapperImpl) MapCustomConvertReverse(src *protos.CustomConvertExa
 	}, nil
 }
 
+func (m AdvancedMapperImpl) MapDetail(detail models.Detail) protos.DetailProto {
+
+	return protos.DetailProto{
+		Note:   detail.Note,
+		Weight: int32(detail.Weight),
+	}
+}
+
 func (m AdvancedMapperImpl) MapEnumExample(src *models.EnumExample) (*protos.EnumExampleProto, error) {
+	if src == nil {
+		return nil, nil
+	}
 	var tmp0 protos.VisibilityProto
 	switch src.Visibility {
 	case models.VisibilityUnspecified:
@@ -83,6 +109,9 @@ func (m AdvancedMapperImpl) MapEnumExample(src *models.EnumExample) (*protos.Enu
 }
 
 func (m AdvancedMapperImpl) MapEnumExampleReverse(src *protos.EnumExampleProto) (*models.EnumExample, error) {
+	if src == nil {
+		return nil, nil
+	}
 	var tmp0 models.Visibility
 	switch src.Visibility {
 	case protos.VisibilityProtoUnspecified:
@@ -103,6 +132,9 @@ func (m AdvancedMapperImpl) MapEnumExampleReverse(src *protos.EnumExampleProto) 
 }
 
 func (m AdvancedMapperImpl) MapItem(item *models.Item) *protos.ItemProto {
+	if item == nil {
+		return nil
+	}
 
 	return &protos.ItemProto{
 		Name:  item.Name,
@@ -111,6 +143,9 @@ func (m AdvancedMapperImpl) MapItem(item *models.Item) *protos.ItemProto {
 }
 
 func (m AdvancedMapperImpl) MapNamedSlice(src *models.NamedSliceExample) *protos.NamedSliceExampleProto {
+	if src == nil {
+		return nil
+	}
 
 	return &protos.NamedSliceExampleProto{
 		ID:    src.ID,
@@ -119,6 +154,9 @@ func (m AdvancedMapperImpl) MapNamedSlice(src *models.NamedSliceExample) *protos
 }
 
 func (m AdvancedMapperImpl) MapNamedSliceReverse(src *protos.NamedSliceExampleProto) *models.NamedSliceExample {
+	if src == nil {
+		return nil
+	}
 
 	return &models.NamedSliceExample{
 		ID:    src.ID,
@@ -126,7 +164,28 @@ func (m AdvancedMapperImpl) MapNamedSliceReverse(src *protos.NamedSliceExamplePr
 	}
 }
 
+func (m AdvancedMapperImpl) MapOptionalExample(src *models.OptionalExample) *protos.OptionalExampleProto {
+	if src == nil {
+		return nil
+	}
+	var tmp0 *protos.DetailProto
+	if tmp1 := src.Detail; tmp1 != nil {
+		tmp2 := *tmp1
+		tmp3 := m.MapDetail(tmp2)
+		tmp0 = &tmp3
+	}
+
+	return &protos.OptionalExampleProto{
+		ID:     src.ID,
+		Detail: tmp0,
+		Item:   m.MapItem(src.Item),
+	}
+}
+
 func (m AdvancedMapperImpl) MapPointerSlice(src *models.PointerSliceExample) *protos.PointerSliceExampleProto {
+	if src == nil {
+		return nil
+	}
 	tmp0 := make([]*protos.ItemProto, len(src.Items))
 	for i := range src.Items {
 		tmp0[i] = m.MapItem(src.Items[i])
@@ -139,6 +198,9 @@ func (m AdvancedMapperImpl) MapPointerSlice(src *models.PointerSliceExample) *pr
 }
 
 func (m AdvancedMapperImpl) MapSnapshotExample(src *models.SnapshotExample) *protos.SnapshotExampleProto {
+	if src == nil {
+		return nil
+	}
 
 	return &protos.SnapshotExampleProto{
 		ID:      src.ID,
@@ -148,6 +210,9 @@ func (m AdvancedMapperImpl) MapSnapshotExample(src *models.SnapshotExample) *pro
 }
 
 func (m AdvancedMapperImpl) MapUser(user *models.User) *protos.UserProto {
+	if user == nil {
+		return nil
+	}
 
 	return &protos.UserProto{
 		ID:        user.ID,
@@ -159,6 +224,9 @@ func (m AdvancedMapperImpl) MapUser(user *models.User) *protos.UserProto {
 }
 
 func (m AdvancedMapperImpl) MapUserReverse(user *protos.UserProto) (*models.User, error) {
+	if user == nil {
+		return nil, nil
+	}
 	tmp0, err := example.ParseTime(user.CreatedAt)
 	if err != nil {
 		return nil, err
@@ -174,6 +242,9 @@ func (m AdvancedMapperImpl) MapUserReverse(user *protos.UserProto) (*models.User
 }
 
 func (m AdvancedMapperImpl) MapUserWithRoles(user *models.UserWithRoles) *protos.UserWithRolesProto {
+	if user == nil {
+		return nil
+	}
 	tmp0 := make([]int32, len(user.Scores))
 	for i := range user.Scores {
 		tmp0[i] = int32(user.Scores[i])
@@ -195,6 +266,9 @@ func (m AdvancedMapperImpl) MapUserWithRoles(user *models.UserWithRoles) *protos
 }
 
 func (m AdvancedMapperImpl) MapUserWithRolesReverse(user *protos.UserWithRolesProto) *models.UserWithRoles {
+	if user == nil {
+		return nil
+	}
 	tmp0 := make([]int, len(user.Scores))
 	for i := range user.Scores {
 		tmp0[i] = int(user.Scores[i])
@@ -220,6 +294,9 @@ type AdvancedMapperImpl struct{}
 var _ example.AdvancedMapper = (*AdvancedMapperImpl)(nil)
 
 func (m MapperImpl) MapJob(job *models.Job) *protos.Job {
+	if job == nil {
+		return nil
+	}
 
 	return &protos.Job{
 		Id:         job.ID,
@@ -233,6 +310,9 @@ func (m MapperImpl) MapJob(job *models.Job) *protos.Job {
 }
 
 func (m MapperImpl) MapJobReverse(job *protos.Job) *models.Job {
+	if job == nil {
+		return nil
+	}
 	tmp0 := job.Group
 	tmp1 := job.ExternalId
 
@@ -249,6 +329,9 @@ func (m MapperImpl) MapJobReverse(job *protos.Job) *models.Job {
 }
 
 func (m MapperImpl) MapPayload(job *models.Job) *protos.Data {
+	if job == nil {
+		return nil
+	}
 
 	return &protos.Data{
 		ContentType: job.DataType,
@@ -257,6 +340,9 @@ func (m MapperImpl) MapPayload(job *models.Job) *protos.Data {
 }
 
 func (m MapperImpl) MapTransition(transition *models.Transition) (*protos.Transition, error) {
+	if transition == nil {
+		return nil, nil
+	}
 	var tmp0 protos.Transition_State
 	if val, ok := protos.Transition_State_value[transition.State]; ok {
 		tmp0 = protos.Transition_State(val)
@@ -273,6 +359,9 @@ func (m MapperImpl) MapTransition(transition *models.Transition) (*protos.Transi
 }
 
 func (m MapperImpl) TransitionProtoToModel(transition *protos.Transition) (*models.Transition, error) {
+	if transition == nil {
+		return nil, nil
+	}
 	var tmp0 string
 	if str, ok := protos.Transition_State_name[int32(transition.State)]; ok {
 		tmp0 = str

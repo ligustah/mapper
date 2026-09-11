@@ -24,6 +24,21 @@ func (t *TypeGraph) storeTypIndex(typ *GoType) int {
 	return idx
 }
 
+// hasConverterFrom reports whether a converter is registered that takes from as
+// written, rather than its element or pointer type, and reaches to in one step.
+func (t *TypeGraph) hasConverterFrom(from, to *GoType) bool {
+	fromIdx, ok := t.typeIndex[from.String()]
+	if !ok {
+		return false
+	}
+	toIdx, ok := t.getTypeIndex(to)
+	if !ok {
+		return false
+	}
+	_, ok = t.mappers[fromIdx][toIdx]
+	return ok
+}
+
 func (t *TypeGraph) getTypeIndex(typ *GoType) (int, bool) {
 	// look for a direct match
 	if idx, ok := t.typeIndex[typ.String()]; ok {

@@ -767,8 +767,8 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 
 	// *T → *U: check before the graph to avoid spurious multi-hop paths through unrelated types.
 	// If we can map T → U, derive a nil-safe pointer-to-pointer mapping automatically.
-	// A single converter registered for this exact pair still wins, it was declared deliberately.
-	if from.Kind == PointerKind && to.Kind == PointerKind && len(m.graph.getMapping(pair.from, pair.to)) != 1 {
+	// A converter that takes *T itself is called directly, it handles nil on its own.
+	if from.Kind == PointerKind && to.Kind == PointerKind && !m.graph.hasConverterFrom(pair.from, pair.to) {
 		gen, canFail := m.buildGenerator(from.Element, to.Element)
 		if gen != nil {
 			return mapPointerToPointer(to.Element, gen), canFail
@@ -882,6 +882,9 @@ func (m *Generator) generateMethod(mapperName string, f *GoFunction) error {
 
 	// prepare all the Fields
 	body := jen.Empty()
+	if len(f.inputs) == 1 && f.inputs[0].typ.Kind == PointerKind {
+		body.Add(nilInputReturn(f, to)).Line()
+	}
 	ctx := &FunctionContext{
 		body:       body,
 		targetType: f.output,
@@ -912,6 +915,23 @@ func (m *Generator) generateMethod(mapperName string, f *GoFunction) error {
 	m.file.Add(function)
 
 	return nil
+}
+
+// nilInputReturn guards a method whose only input is a pointer: nil in gives nil
+// out for a pointer result and the zero value for a value result.
+func nilInputReturn(f *GoFunction, to *GoType) jen.Code {
+	name := f.inputs[0].name
+	if name == "" {
+		name = "input0"
+	}
+	var zero jen.Code = jen.Nil()
+	if to.Kind != PointerKind {
+		zero = jen.Qual(to.Pkg, to.Name).Values()
+	}
+	if f.hasError {
+		zero = jen.List(zero, jen.Nil())
+	}
+	return jen.If(jen.Id(name).Op("==").Nil()).Block(jen.Return(zero))
 }
 
 func (m *Generator) String() (string, error) {

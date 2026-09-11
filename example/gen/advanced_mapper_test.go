@@ -40,6 +40,53 @@ func TestAdvancedMapper_MapUser(t *testing.T) {
 	}
 }
 
+// TestAdvancedMapper_MapOptionalExample covers optional nested values: a nil field
+// stays nil whether the pair is mapped through a value method or a pointer method
+func TestAdvancedMapper_MapOptionalExample(t *testing.T) {
+	m := AdvancedMapperImpl{}
+
+	empty := m.MapOptionalExample(&models.OptionalExample{ID: "opt-1"})
+	if empty.ID != "opt-1" {
+		t.Errorf("ID mismatch: got %v, want %v", empty.ID, "opt-1")
+	}
+	if empty.Detail != nil {
+		t.Errorf("Detail should stay nil, got %+v", empty.Detail)
+	}
+	if empty.Item != nil {
+		t.Errorf("Item should stay nil, got %+v", empty.Item)
+	}
+
+	full := m.MapOptionalExample(&models.OptionalExample{
+		ID:     "opt-2",
+		Detail: &models.Detail{Note: "note", Weight: 7},
+		Item:   &models.Item{Name: "item", Count: 3},
+	})
+	if full.Detail == nil || full.Detail.Note != "note" || full.Detail.Weight != 7 {
+		t.Errorf("Detail mismatch: got %+v", full.Detail)
+	}
+	if full.Item == nil || full.Item.Name != "item" || full.Item.Count != 3 {
+		t.Errorf("Item mismatch: got %+v", full.Item)
+	}
+}
+
+// TestAdvancedMapper_NilInput covers the guard every pointer-input method opens
+// with, for a pointer result and for one paired with an error
+func TestAdvancedMapper_NilInput(t *testing.T) {
+	m := AdvancedMapperImpl{}
+
+	if got := m.MapItem(nil); got != nil {
+		t.Errorf("MapItem(nil) = %+v, want nil", got)
+	}
+
+	got, err := m.MapUserReverse(nil)
+	if err != nil {
+		t.Errorf("MapUserReverse(nil) error = %v, want nil", err)
+	}
+	if got != nil {
+		t.Errorf("MapUserReverse(nil) = %+v, want nil", got)
+	}
+}
+
 func TestAdvancedMapper_MapUserReverse(t *testing.T) {
 	m := AdvancedMapperImpl{}
 	now := time.Now()

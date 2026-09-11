@@ -96,6 +96,14 @@ types, e.g. two separately declared `type X string`. This is narrower than
 `types.ConvertibleTo` on purpose: lossy conversions such as `int64` → `int32` and
 `string` ↔ `[]byte` are not auto-derived and still need an explicit converter.
 
+### Nil Pointers
+
+A generated method whose only input is a pointer opens with a nil guard: nil in
+gives nil out for a pointer result, the zero value for a value result. A `*T` → `*U`
+field is derived from a `T` → `U` converter by wrapping it in a nil check, so a nil
+field stays nil. A converter registered for `*T` itself is called directly and is
+expected to handle nil on its own.
+
 ### Field Mapping Directives
 
 In method doc comments:

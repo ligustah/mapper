@@ -87,3 +87,16 @@ type SnapshotExampleProto struct {
 	Summary string
 	Digest  string
 }
+
+// DetailProto is an optional nested message
+type DetailProto struct {
+	Note   string
+	Weight int32
+}
+
+// OptionalExampleProto demonstrates optional nested messages
+type OptionalExampleProto struct {
+	ID     string
+	Detail *DetailProto
+	Item   *ItemProto
+}

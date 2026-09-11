@@ -101,3 +101,16 @@ type SnapshotExample struct {
 	ID       string
 	Snapshot *Snapshot
 }
+
+// Detail is an optional nested value, mapped through a value method
+type Detail struct {
+	Note   string
+	Weight int
+}
+
+// OptionalExample demonstrates optional nested values: a nil field stays nil
+type OptionalExample struct {
+	ID     string
+	Detail *Detail
+	Item   *Item
+}
