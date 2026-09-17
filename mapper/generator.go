@@ -573,14 +573,16 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 	inputExpr := jen.Id(param.name).Op(".").Add(inputField.id())
 
 	// Build the generator: if the source is *T, use nil-safe pointer wrapping.
+	// a method is called on the pointer itself inside the nil check, the value is
+	// never copied out of it
 	gen := methodConverter(methodName, elemType, false)
 	produces := resultGoType
 	switch {
 	case srcType.Kind == PointerKind && field.typ.Kind == PointerKind:
-		gen = mapPointerToPointer(resultGoType, gen)
+		gen = derefGuard(jen.Op("*").Add(resultGoType.ref()), gen, true, false)
 		produces = resultGoType.pointer()
 	case srcType.Kind == PointerKind:
-		gen = mapPointerToValue(resultGoType, gen)
+		gen = derefGuard(resultGoType.ref(), gen, false, false)
 	}
 
 	gen, guardFails := guardPath(f, param, inputField, gen)
@@ -1087,24 +1089,25 @@ func mapToPointer(gen GeneratorFunc) GeneratorFunc {
 // mapPointerToPointer derives a nil-safe *T → *U mapping from a T → U generator.
 // If the input pointer is nil, the output pointer is nil.
 func mapPointerToPointer(targetElem *GoType, gen GeneratorFunc) GeneratorFunc {
-	return derefGuard(jen.Op("*").Add(targetElem.ref()), gen, true)
+	return derefGuard(jen.Op("*").Add(targetElem.ref()), gen, true, true)
 }
 
 // mapPointerThrough derives a nil-safe *T → *U mapping from a T → *U generator: nil
 // in gives nil out, otherwise the pointer the generator hands back is used as it is.
 func mapPointerThrough(targetElem *GoType, gen GeneratorFunc) GeneratorFunc {
-	return derefGuard(jen.Op("*").Add(targetElem.ref()), gen, false)
+	return derefGuard(jen.Op("*").Add(targetElem.ref()), gen, false, true)
 }
 
 // mapPointerToValue derives a nil-safe *T → U mapping from a T → U generator: nil in
 // gives the zero value of U, the generator never runs on a zero T.
 func mapPointerToValue(target *GoType, gen GeneratorFunc) GeneratorFunc {
-	return derefGuard(target.ref(), gen, false)
+	return derefGuard(target.ref(), gen, false, true)
 }
 
-// derefGuard emits `var out OutType` and, if the input is not nil, dereferences it
-// and assigns what gen makes of the value, or its address when takeAddress is set.
-func derefGuard(outType jen.Code, gen GeneratorFunc, takeAddress bool) GeneratorFunc {
+// derefGuard emits `var out OutType` and, if the input is not nil, assigns what gen
+// makes of it, or the address of that when takeAddress is set. With deref the
+// generator is handed the value behind the pointer, otherwise the pointer itself.
+func derefGuard(outType jen.Code, gen GeneratorFunc, takeAddress, deref bool) GeneratorFunc {
 	return func(ctx *FunctionContext, input jen.Code) jen.Code {
 		outVar := ctx.tmpVar()
 		inVar := ctx.tmpVar()
@@ -1117,13 +1120,16 @@ func derefGuard(outType jen.Code, gen GeneratorFunc, takeAddress bool) Generator
 			canFail:    false,
 			varCounter: ctx.varCounter,
 		}
-		// inside the nil-check block inVar is *T, while gen expects T. Method calls would
-		// auto-dereference, but conversions and plain function calls would not, so
-		// dereference into a value first and hand that to the generator.
-		derefVar := subCtx.tmpVar()
-		subCtx.add(jen.Id(derefVar).Op(":=").Op("*").Id(inVar).Line())
+		// inside the nil-check block inVar is *T. Conversions and plain function calls
+		// need the value, so it is dereferenced into a variable first.
+		value := jen.Id(inVar)
+		if deref {
+			derefVar := subCtx.tmpVar()
+			subCtx.add(jen.Id(derefVar).Op(":=").Op("*").Id(inVar).Line())
+			value = jen.Id(derefVar)
+		}
 
-		converted := gen(subCtx, jen.Id(derefVar))
+		converted := gen(subCtx, value)
 		ctx.varCounter = subCtx.varCounter
 
 		ifBody := jen.Empty().Add(subCtx.body)
