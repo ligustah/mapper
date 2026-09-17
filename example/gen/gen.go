@@ -137,13 +137,31 @@ func (m AdvancedMapperImpl) MapEvent(src *models.Event) *protos.EventProto {
 	if src == nil {
 		return nil
 	}
+	var tmp0 int64
+	if tmp1 := src.RetiredAt; tmp1 != nil {
+		tmp2 := *tmp1
+		tmp0 = tmp2.UnixNano()
+	}
+	var tmp3 *timestamppb.Timestamp
+	if tmp4 := src.Deadline; tmp4 != nil {
+		tmp5 := *tmp4
+		tmp3 = timestamppb.New(tmp5)
+	}
+	var tmp6 string
+	if tmp7 := src.Note; tmp7 != nil {
+		tmp8 := *tmp7
+		tmp6 = example.Upper(tmp8)
+	}
 
 	return &protos.EventProto{
-		ID:      src.ID,
-		AtNs:    src.At.UnixNano(),
-		Owner:   []byte(src.Owner),
-		OwnerId: src.OwnerID,
-		Level:   protos.Level(src.Level),
+		ID:          src.ID,
+		AtNs:        src.At.UnixNano(),
+		Owner:       []byte(src.Owner),
+		OwnerId:     src.OwnerID,
+		Level:       protos.Level(src.Level),
+		RetiredAtNs: tmp0,
+		Deadline:    tmp3,
+		Note:        tmp6,
 	}
 }
 

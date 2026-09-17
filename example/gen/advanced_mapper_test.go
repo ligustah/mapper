@@ -343,6 +343,22 @@ func TestAdvancedMapper_MapEvent(t *testing.T) {
 	if proto.Level != protos.LevelWarn {
 		t.Errorf("Level mismatch: got %v, want %v", proto.Level, protos.LevelWarn)
 	}
+
+	if proto.RetiredAtNs != 0 || proto.Deadline != nil || proto.Note != "" {
+		t.Errorf("nil optional fields should stay zero, got %+v", proto)
+	}
+
+	note := "hello"
+	full := m.MapEvent(&models.Event{ID: "ev-2", RetiredAt: &at, Deadline: &at, Note: &note})
+	if full.RetiredAtNs != at.UnixNano() {
+		t.Errorf("RetiredAtNs mismatch: got %v, want %v", full.RetiredAtNs, at.UnixNano())
+	}
+	if full.Deadline == nil || !full.Deadline.AsTime().Equal(at) {
+		t.Errorf("Deadline mismatch: got %v, want %v", full.Deadline, at)
+	}
+	if full.Note != "HELLO" {
+		t.Errorf("Note mismatch: got %q, want %q", full.Note, "HELLO")
+	}
 }
 
 // TestAdvancedMapper_MapOrder covers a from: path through an edge pointer: with an

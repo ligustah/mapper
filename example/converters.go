@@ -2,6 +2,7 @@ package example
 
 import (
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -29,6 +30,11 @@ func IntToString(i int) string {
 // FormatTime is a custom converter for time.Time -> string
 func FormatTime(t time.Time) string {
 	return t.Format(time.RFC3339)
+}
+
+// Upper is a custom converter for string -> string
+func Upper(s string) string {
+	return strings.ToUpper(s)
 }
 
 // ParseTime is a custom converter for string -> time.Time

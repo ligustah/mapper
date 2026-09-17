@@ -103,7 +103,10 @@ A generated method whose only input is a pointer opens with a nil guard: nil in
 gives nil out for a pointer result, the zero value for a value result. A `*T` → `*U`
 field is derived from a `T` → `U` converter by wrapping it in a nil check, so a nil
 field stays nil. A converter registered for `*T` itself is called directly and is
-expected to handle nil on its own.
+expected to handle nil on its own. A converter from `T` that already returns `*U`,
+like `timestamppb.New`, has its pointer kept rather than copied and re-addressed.
+A `*T` → `U` field mapped through `method:` or `using:` keeps the zero value of `U`
+when the pointer is nil, the method or function never runs on a zero `T`.
 
 ### Nested Paths
 

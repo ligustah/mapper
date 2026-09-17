@@ -560,12 +560,12 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 	inputExpr := jen.Id(param.name).Op(".").Add(inputField.id())
 
 	// Build the generator: if the source is *T, use nil-safe pointer wrapping.
-	var gen GeneratorFunc
-	if srcType.Kind == PointerKind && field.typ.Kind == PointerKind {
-		inner := methodConverter(methodName, elemType, false)
-		gen = mapPointerToPointer(resultGoType, inner)
-	} else {
-		gen = methodConverter(methodName, elemType, false)
+	gen := methodConverter(methodName, elemType, false)
+	switch {
+	case srcType.Kind == PointerKind && field.typ.Kind == PointerKind:
+		gen = mapPointerToPointer(resultGoType, gen)
+	case srcType.Kind == PointerKind:
+		gen = mapPointerToValue(resultGoType, gen)
 	}
 
 	gen, guardFails := guardPath(f, param, inputField, gen)
@@ -752,13 +752,15 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 		}
 	}
 
-	// If the source field is *T but the function/method expects T, and the target field is *U,
-	// wrap with nil-safe pointer-to-pointer logic rather than calling through a raw pointer.
-	if sourceFieldType != nil &&
-		sourceFieldType.Kind == PointerKind &&
-		funcInputType.Kind != PointerKind &&
-		field.typ.Kind == PointerKind {
-		generator = mapPointerToPointer(field.typ.Element, generator)
+	// If the source field is *T but the function/method expects T, guard the nil
+	// case rather than calling through a raw pointer: a *U target stays nil, a U
+	// target keeps its zero value.
+	if sourceFieldType != nil && sourceFieldType.Kind == PointerKind && funcInputType.Kind != PointerKind {
+		if field.typ.Kind == PointerKind {
+			generator = mapPointerToPointer(field.typ.Element, generator)
+		} else {
+			generator = mapPointerToValue(getGoType(funcSig.Results().At(0).Type()), generator)
+		}
 	}
 
 	guardFails := false
@@ -802,6 +804,14 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 	// If we can map T → U, derive a nil-safe pointer-to-pointer mapping automatically.
 	// A converter that takes *T itself is called directly, it handles nil on its own.
 	if from.Kind == PointerKind && to.Kind == PointerKind && !m.graph.hasConverterFrom(pair.from, pair.to) {
+		// a chain from T that already ends in *U keeps the pointer it hands back,
+		// rather than copying the value out of it and taking its address again
+		if mappers := m.graph.getMapping(from.Element, pair.to); len(mappers) > 0 &&
+			mappers[len(mappers)-1].types.to.String() == pair.to.String() {
+			gen, canFail := compose(TypePair{from: from.Element, to: pair.to}, mappers)
+			return mapPointerThrough(to.Element, gen), canFail
+		}
+
 		gen, canFail := m.buildGenerator(from.Element, to.Element)
 		if gen != nil {
 			return mapPointerToPointer(to.Element, gen), canFail
@@ -1044,11 +1054,29 @@ func mapToPointer(gen GeneratorFunc) GeneratorFunc {
 // mapPointerToPointer derives a nil-safe *T → *U mapping from a T → U generator.
 // If the input pointer is nil, the output pointer is nil.
 func mapPointerToPointer(targetElem *GoType, gen GeneratorFunc) GeneratorFunc {
+	return derefGuard(jen.Op("*").Add(targetElem.ref()), gen, true)
+}
+
+// mapPointerThrough derives a nil-safe *T → *U mapping from a T → *U generator: nil
+// in gives nil out, otherwise the pointer the generator hands back is used as it is.
+func mapPointerThrough(targetElem *GoType, gen GeneratorFunc) GeneratorFunc {
+	return derefGuard(jen.Op("*").Add(targetElem.ref()), gen, false)
+}
+
+// mapPointerToValue derives a nil-safe *T → U mapping from a T → U generator: nil in
+// gives the zero value of U, the generator never runs on a zero T.
+func mapPointerToValue(target *GoType, gen GeneratorFunc) GeneratorFunc {
+	return derefGuard(target.ref(), gen, false)
+}
+
+// derefGuard emits `var out OutType` and, if the input is not nil, dereferences it
+// and assigns what gen makes of the value, or its address when takeAddress is set.
+func derefGuard(outType jen.Code, gen GeneratorFunc, takeAddress bool) GeneratorFunc {
 	return func(ctx *FunctionContext, input jen.Code) jen.Code {
 		outVar := ctx.tmpVar()
 		inVar := ctx.tmpVar()
 
-		ctx.add(jen.Var().Id(outVar).Op("*").Add(targetElem.ref()).Line())
+		ctx.add(jen.Var().Id(outVar).Add(outType).Line())
 
 		subCtx := &FunctionContext{
 			targetType: ctx.targetType,
@@ -1065,10 +1093,14 @@ func mapPointerToPointer(targetElem *GoType, gen GeneratorFunc) GeneratorFunc {
 		converted := gen(subCtx, jen.Id(derefVar))
 		ctx.varCounter = subCtx.varCounter
 
-		valVar := ctx.tmpVar()
 		ifBody := jen.Empty().Add(subCtx.body)
-		ifBody.Add(jen.Id(valVar).Op(":=").Add(converted).Line())
-		ifBody.Add(jen.Id(outVar).Op("=").Op("&").Id(valVar))
+		if takeAddress {
+			valVar := ctx.tmpVar()
+			ifBody.Add(jen.Id(valVar).Op(":=").Add(converted).Line())
+			ifBody.Add(jen.Id(outVar).Op("=").Op("&").Id(valVar))
+		} else {
+			ifBody.Add(jen.Id(outVar).Op("=").Add(converted))
+		}
 
 		ctx.add(
 			jen.If(

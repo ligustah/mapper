@@ -1,5 +1,7 @@
 package protos
 
+import "google.golang.org/protobuf/types/known/timestamppb"
+
 // UserProto demonstrates basic struct mapping
 type UserProto struct {
 	ID        string
@@ -117,9 +119,12 @@ const (
 
 // EventProto demonstrates derived conversions onto bytes and a named integer type
 type EventProto struct {
-	ID      string
-	AtNs    int64
-	Owner   []byte
-	OwnerId int64
-	Level   Level
+	ID          string
+	AtNs        int64
+	Owner       []byte
+	OwnerId     int64
+	Level       Level
+	RetiredAtNs int64
+	Deadline    *timestamppb.Timestamp
+	Note        string
 }

@@ -108,7 +108,14 @@ type AdvancedMapper interface {
 	// annotation: string -> []byte and conversions between integer types, named or
 	// not, are derived. Neither does OwnerId, a field name that has no exact match
 	// falls back to a case-insensitive one, so it finds OwnerID.
+	//
+	// The three optional fields are pointers on the model. A nil RetiredAt leaves
+	// RetiredAtNs zero rather than calling the method on nil, a nil Deadline stays
+	// nil and the timestamp converter's pointer is kept as it is, and a nil Note
+	// leaves the field empty without running the converter.
 	// field:AtNs from:"At" method:"UnixNano"
+	// field:RetiredAtNs from:"RetiredAt" method:"UnixNano"
+	// field:Note using:"Upper"
 	MapEvent(src *models.Event) *protos.EventProto
 
 	// A from: path through a pointer never dereferences nil. Because this method
