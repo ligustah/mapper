@@ -114,3 +114,12 @@ type OptionalExample struct {
 	Detail *Detail
 	Item   *Item
 }
+
+// Event demonstrates conversions the generator derives on its own: a time read
+// through a method, a string carried as bytes and an int onto a named integer type
+type Event struct {
+	ID    string
+	At    time.Time
+	Owner string
+	Level int
+}

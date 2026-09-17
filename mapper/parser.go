@@ -9,8 +9,10 @@ import (
 	"go/token"
 	"go/types"
 	"log"
+	"path"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
@@ -94,6 +96,8 @@ type interfaceDoc struct {
 	name  string
 	doc   string
 	funcs map[string]funcDoc
+	// imports of the file declaring the interface, local name to package path
+	imports map[string]string
 }
 
 type funcDoc struct {
@@ -139,7 +143,7 @@ func (p *Parser) parsePackage(pkg *packages.Package) []*GoInterface {
 
 					for i := 0; i < iface.NumMethods(); i++ {
 						method := iface.Method(i)
-						goFunc, err := p.getGoFunction(method, interfaceDocs.funcs[method.Name()])
+						goFunc, err := p.getGoFunction(method, interfaceDocs.funcs[method.Name()], goIface.Pkg, interfaceDocs.imports)
 						if err != nil {
 							log.Fatal(err)
 						}
@@ -156,7 +160,9 @@ func (p *Parser) parsePackage(pkg *packages.Package) []*GoInterface {
 	return interfaces
 }
 
-func (p *Parser) getGoFunction(method *types.Func, f funcDoc) (*GoFunction, error) {
+// getGoFunction builds the function for an interface method. pkg and imports are the
+// declaring package and its file's imports, which qualify short `using:` references.
+func (p *Parser) getGoFunction(method *types.Func, f funcDoc, pkg string, imports map[string]string) (*GoFunction, error) {
 	// method type is always *types.Signature
 	signature := method.Type().(*types.Signature)
 	goFunc := &GoFunction{
@@ -207,7 +213,7 @@ func (p *Parser) getGoFunction(method *types.Func, f funcDoc) (*GoFunction, erro
 				}
 
 				goFunc.options[fieldName].from = tag.Get("from")
-				goFunc.options[fieldName].using = tag.Get("using")
+				goFunc.options[fieldName].using = qualifyReference(tag.Get("using"), pkg, imports)
 				goFunc.options[fieldName].method = tag.Get("method")
 				goFunc.options[fieldName].mapping = tag.Get("map")
 			}
@@ -241,9 +247,10 @@ func (p *Parser) getDocComments(pkg *packages.Package) (map[string]interfaceDoc,
 				if typeSpec, ok := spec.(*ast.TypeSpec); ok {
 					if iface, ok := typeSpec.Type.(*ast.InterfaceType); ok {
 						ifaceDoc := interfaceDoc{
-							name:  t.Name,
-							doc:   t.Doc,
-							funcs: map[string]funcDoc{},
+							name:    t.Name,
+							doc:     t.Doc,
+							funcs:   map[string]funcDoc{},
+							imports: fileImports(pkg, t.Decl.Pos()),
 						}
 
 						for _, method := range iface.Methods.List {
@@ -272,4 +279,44 @@ func (p *Parser) getDocComments(pkg *packages.Package) (map[string]interfaceDoc,
 	}
 
 	return interfaceDocs, nil
+}
+
+// fileImports maps the local names the file containing pos imports to the package
+// paths behind them. Blank and dot imports are left out.
+func fileImports(pkg *packages.Package, pos token.Pos) map[string]string {
+	file := pkg.Fset.File(pos)
+	if file == nil {
+		return nil
+	}
+
+	imports := map[string]string{}
+	for _, syntax := range pkg.Syntax {
+		if pkg.Fset.File(syntax.Pos()) != file {
+			continue
+		}
+
+		for _, spec := range syntax.Imports {
+			pkgPath, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				continue
+			}
+
+			name := ""
+			if spec.Name != nil {
+				name = spec.Name.Name
+			} else if imported, ok := pkg.Imports[pkgPath]; ok {
+				name = imported.Name
+			} else {
+				name = path.Base(pkgPath)
+			}
+
+			if name == "_" || name == "." {
+				continue
+			}
+
+			imports[name] = pkgPath
+		}
+	}
+
+	return imports
 }

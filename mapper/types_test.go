@@ -105,6 +105,40 @@ func Test_splitPackageAndType(t *testing.T) {
 	}
 }
 
+func TestQualifyReference(t *testing.T) {
+	const pkg = "example.com/app/mapping"
+	imports := map[string]string{
+		"proto": "example.com/app/proto",
+		"pb":    "google.golang.org/protobuf/types/known/timestamppb",
+		"time":  "time",
+	}
+
+	tests := []struct {
+		ref  string
+		want string
+	}{
+		{"Ref", pkg + ".Ref"},
+		{" Ref ", pkg + ".Ref"},
+		{"(*Row).Name", pkg + ".(*Row).Name"},
+		{"(Row).Name", pkg + ".(Row).Name"},
+		{"proto.NewRef", "example.com/app/proto.NewRef"},
+		{"proto.(*Ref).String", "example.com/app/proto.(*Ref).String"},
+		{"pb.New", "google.golang.org/protobuf/types/known/timestamppb.New"},
+		{"time.Unix", "time.Unix"},
+		{"strconv.Itoa", "strconv.Itoa"},
+		{"example.com/app/proto.NewRef", "example.com/app/proto.NewRef"},
+		{"", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.ref, func(t *testing.T) {
+			if got := qualifyReference(tt.ref, pkg, imports); got != tt.want {
+				t.Errorf("qualifyReference(%q) = %q, want %q", tt.ref, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestGoTypeRef guards that a type is spelled with everything wrapped around it.
 // qual() names only the named type, so using it where a full type reference is
 // needed silently drops the star off a `[]*T` element and generates `[]T`.

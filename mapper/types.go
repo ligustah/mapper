@@ -334,6 +334,28 @@ func assignableTo(from, to types.Type) bool {
 	return types.TypeString(from, nil) == types.TypeString(to, nil)
 }
 
+// qualifyReference expands the short forms of a `using:` reference into the full
+// `import/path.Name` form. A bare name refers to pkg itself, a `local.Name` whose
+// prefix is one of imports refers to the imported package. Anything else, including
+// a path with a slash, is returned unchanged.
+func qualifyReference(ref, pkg string, imports map[string]string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || strings.Contains(ref, "/") {
+		return ref
+	}
+
+	head, rest, found := strings.Cut(ref, ".")
+	if !found || strings.HasPrefix(head, "(") {
+		return pkg + "." + ref
+	}
+
+	if full, ok := imports[head]; ok {
+		return full + "." + rest
+	}
+
+	return ref
+}
+
 func splitPackageAndType(name string) (canonical string, pkg string, typeName, methodName string, pointer bool, err error) {
 	trimmed := strings.TrimSpace(name)
 

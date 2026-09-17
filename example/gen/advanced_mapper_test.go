@@ -318,6 +318,30 @@ func TestAdvancedMapper_MapSnapshotExample(t *testing.T) {
 	}
 }
 
+// TestAdvancedMapper_MapEvent covers conversions derived without a converter: a
+// method call, string to []byte and an int onto a named integer type
+func TestAdvancedMapper_MapEvent(t *testing.T) {
+	m := AdvancedMapperImpl{}
+
+	at := time.Date(2026, time.September, 17, 12, 0, 0, 500, time.UTC)
+	src := &models.Event{ID: "ev-1", At: at, Owner: "root", Level: 1}
+
+	proto := m.MapEvent(src)
+
+	if proto.ID != src.ID {
+		t.Errorf("ID mismatch: got %v, want %v", proto.ID, src.ID)
+	}
+	if proto.AtNs != at.UnixNano() {
+		t.Errorf("AtNs mismatch: got %v, want %v", proto.AtNs, at.UnixNano())
+	}
+	if string(proto.Owner) != src.Owner {
+		t.Errorf("Owner mismatch: got %q, want %q", proto.Owner, src.Owner)
+	}
+	if proto.Level != protos.LevelWarn {
+		t.Errorf("Level mismatch: got %v, want %v", proto.Level, protos.LevelWarn)
+	}
+}
+
 // TestAdvancedMapper_MapArrayConvert covers a fixed-size array whose elements need
 // a conversion, so the array is rebuilt element by element
 func TestAdvancedMapper_MapArrayConvert(t *testing.T) {

@@ -45,7 +45,9 @@ type Mapper interface {
 // - Error handling for converters that can fail
 // mapper:generate
 type AdvancedMapper interface {
-	// field:CreatedAt using:"github.com/ligustah/mapper/example.FormatTime"
+	// A bare name in using: refers to the package declaring the interface, and
+	// `alias.Name` to one of the file's imports. The full import path still works.
+	// field:CreatedAt using:"FormatTime"
 	MapUser(user *models.User) *protos.UserProto
 
 	// field:CreatedAt using:"github.com/ligustah/mapper/example.ParseTime"
@@ -101,4 +103,10 @@ type AdvancedMapper interface {
 	// check and a nil field stays nil. Item has a pointer method, that one is called
 	// as it is and guards nil itself.
 	MapOptionalExample(src *models.OptionalExample) *protos.OptionalExampleProto
+
+	// AtNs is read off a method of the source value. Owner and Level need no
+	// annotation: string -> []byte and conversions between integer types, named or
+	// not, are derived.
+	// field:AtNs from:"At" method:"UnixNano"
+	MapEvent(src *models.Event) *protos.EventProto
 }

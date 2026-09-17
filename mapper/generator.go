@@ -795,7 +795,7 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 
 	// no converter is registered, but the two types may still be a plain Go type
 	// conversion away from each other (e.g. two named string types)
-	if isLosslessConversion(pair.from.Raw, pair.to.Raw) {
+	if isDirectConversion(pair.from.Raw, pair.to.Raw) {
 		log.Printf("converting %s to %s using a direct type conversion", pair.from.String(), pair.to.String())
 		m.checkEnums(pair)
 		return convertMapping(pair.to), false
@@ -1193,13 +1193,13 @@ func enumSwitchMapping(target *GoType, fieldName string, cases []enumSwitchCase)
 	}
 }
 
-// isLosslessConversion reports whether `from` can be turned into `to` with a plain
-// Go type conversion that cannot lose information. This is deliberately narrower
-// than types.ConvertibleTo, which would also allow truncating conversions such as
-// int64 -> int32 and representation changes such as string <-> []byte. Requiring
-// identical underlying types restricts this to cases that only differ in the name
-// of the type, e.g. two distinct `type X string` declarations.
-func isLosslessConversion(from, to types.Type) bool {
+// isDirectConversion reports whether `from` can be turned into `to` with a plain Go
+// type conversion the generator derives on its own. That is narrower than
+// types.ConvertibleTo: types differing only in their name (two distinct
+// `type X string`), integers of any width, matching the builtin converters between
+// unnamed integers, and string <-> []byte, which changes representation but never
+// loses data. Anything else, e.g. int <-> float or string <-> int, needs a converter.
+func isDirectConversion(from, to types.Type) bool {
 	if from == nil || to == nil {
 		return false
 	}
@@ -1209,17 +1209,45 @@ func isLosslessConversion(from, to types.Type) bool {
 		return false
 	}
 
-	if !types.Identical(from.Underlying(), to.Underlying()) {
+	if !types.ConvertibleTo(from, to) {
 		return false
 	}
 
-	return types.ConvertibleTo(from, to)
+	fromU, toU := from.Underlying(), to.Underlying()
+	if types.Identical(fromU, toU) {
+		return true
+	}
+
+	if isInteger(fromU) && isInteger(toU) {
+		return true
+	}
+
+	return (isString(fromU) && isByteSlice(toU)) || (isByteSlice(fromU) && isString(toU))
+}
+
+func isInteger(typ types.Type) bool {
+	basic, ok := typ.(*types.Basic)
+	return ok && basic.Info()&types.IsInteger != 0
+}
+
+func isString(typ types.Type) bool {
+	basic, ok := typ.(*types.Basic)
+	return ok && basic.Info()&types.IsString != 0
+}
+
+func isByteSlice(typ types.Type) bool {
+	slice, ok := typ.(*types.Slice)
+	if !ok {
+		return false
+	}
+	elem, ok := slice.Elem().Underlying().(*types.Basic)
+	return ok && elem.Kind() == types.Uint8
 }
 
 // convertMapping emits a plain Go type conversion, e.g. `pkg.Target(input)`.
 func convertMapping(to *GoType) GeneratorFunc {
 	return func(ctx *FunctionContext, input jen.Code) jen.Code {
-		return to.qual().Call(input)
+		return to.ref().Call(input)
 	}
 }
 

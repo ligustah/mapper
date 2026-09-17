@@ -91,10 +91,11 @@ The main entry point is `main.go`, which parses a package and generates mapper i
 ### Direct Type Conversions
 
 When no converter is registered for a pair, the generator falls back to a plain Go
-conversion (`store.GalaxyState(in.State)`) if both types have identical underlying
-types, e.g. two separately declared `type X string`. This is narrower than
-`types.ConvertibleTo` on purpose: lossy conversions such as `int64` → `int32` and
-`string` ↔ `[]byte` are not auto-derived and still need an explicit converter.
+conversion (`store.GalaxyState(in.State)`) in three cases: both types have identical
+underlying types, e.g. two separately declared `type X string`; both are integers of
+any width, named or not, matching the builtin converters between unnamed integers;
+or the pair is `string` ↔ `[]byte`. This is narrower than `types.ConvertibleTo` on
+purpose: `int` ↔ `float64` or `string` ↔ `int` still need an explicit converter.
 
 ### Nil Pointers
 
@@ -111,7 +112,9 @@ In method doc comments:
 - `// field:TargetField from:"Nested.Path"` - Map from a nested field
 - `// field:TargetField from:"."` - Map directly from the input type itself
 - `// field:TargetField from:"-"` - Ignore/skip this field
-- `// field:TargetField using:"pkg.CustomFunc"` - Use a custom converter function
+- `// field:TargetField using:"import/path.CustomFunc"` - Use a custom converter function
+- `// field:TargetField using:"CustomFunc"` - A bare name is a function of the interface's own package
+- `// field:TargetField using:"alias.CustomFunc"` - An import of the interface's file, by its local name
 - `// field:TargetField method:"MethodName"` - Call a no-argument method on the source value
 - `// field:TargetField map:"a=X,b=Y"` - Map listed values explicitly (see below)
 

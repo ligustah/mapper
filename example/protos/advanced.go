@@ -100,3 +100,19 @@ type OptionalExampleProto struct {
 	Detail *DetailProto
 	Item   *ItemProto
 }
+
+// Level is a numbered enum narrower than the model's plain int
+type Level uint8
+
+const (
+	LevelInfo Level = iota
+	LevelWarn
+)
+
+// EventProto demonstrates derived conversions onto bytes and a named integer type
+type EventProto struct {
+	ID    string
+	AtNs  int64
+	Owner []byte
+	Level Level
+}

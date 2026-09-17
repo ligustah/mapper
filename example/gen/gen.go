@@ -133,6 +133,19 @@ func (m AdvancedMapperImpl) MapEnumExampleReverse(src *protos.EnumExampleProto) 
 	}, nil
 }
 
+func (m AdvancedMapperImpl) MapEvent(src *models.Event) *protos.EventProto {
+	if src == nil {
+		return nil
+	}
+
+	return &protos.EventProto{
+		ID:    src.ID,
+		AtNs:  src.At.UnixNano(),
+		Owner: []byte(src.Owner),
+		Level: protos.Level(src.Level),
+	}
+}
+
 func (m AdvancedMapperImpl) MapItem(item *models.Item) *protos.ItemProto {
 	if item == nil {
 		return nil

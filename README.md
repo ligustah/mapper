@@ -481,7 +481,10 @@ To use a custom mapper function:
     *   The `customMapperFunc` argument is the function itself. The `mapper` tool will use reflection to extract its input and output types, its name, package, and error-returning capability.
 
 3.  **Use the `using` Field Annotation:**
-    In your mapping interface, use the `// field:OutputFieldName using:"CustomMapperFunc"` annotation on the target field that requires the custom conversion. `CustomMapperFunc` should be the fully qualified name of your custom mapper function (e.g., `"mypackage.StringToInt"`).
+    In your mapping interface, use the `// field:OutputFieldName using:"CustomMapperFunc"` annotation on the target field that requires the custom conversion. `CustomMapperFunc` names your custom mapper function in one of three ways:
+    *   by its full import path, e.g. `"github.com/you/app/mypackage.StringToInt"`
+    *   by a bare name, e.g. `"StringToInt"`, for a function declared in the same package as the interface
+    *   by the local name of one of the file's imports, e.g. `"mypackage.StringToInt"` when the file declaring the interface imports `mypackage`
 
     **Example Mapping Interface using Registered Custom Mappers:**
 
