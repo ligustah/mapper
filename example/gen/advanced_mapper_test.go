@@ -324,7 +324,7 @@ func TestAdvancedMapper_MapEvent(t *testing.T) {
 	m := AdvancedMapperImpl{}
 
 	at := time.Date(2026, time.September, 17, 12, 0, 0, 500, time.UTC)
-	src := &models.Event{ID: "ev-1", At: at, Owner: "root", Level: 1}
+	src := &models.Event{ID: "ev-1", At: at, Owner: "root", OwnerID: 7, Level: 1}
 
 	proto := m.MapEvent(src)
 
@@ -336,6 +336,9 @@ func TestAdvancedMapper_MapEvent(t *testing.T) {
 	}
 	if string(proto.Owner) != src.Owner {
 		t.Errorf("Owner mismatch: got %q, want %q", proto.Owner, src.Owner)
+	}
+	if proto.OwnerId != src.OwnerID {
+		t.Errorf("OwnerId mismatch: got %v, want %v", proto.OwnerId, src.OwnerID)
 	}
 	if proto.Level != protos.LevelWarn {
 		t.Errorf("Level mismatch: got %v, want %v", proto.Level, protos.LevelWarn)

@@ -184,16 +184,21 @@ func (m *Generator) discoverEnumWithVisited(typ *GoType, visited map[*GoType]boo
 	}
 }
 
-func (m *Generator) findField(inputs []*GoParameter, source string) (*GoParameter, GoFieldPath) {
+// findField looks source up in each input in turn. A nil path means no input has
+// the field, an error means the name is ambiguous within an input.
+func (m *Generator) findField(inputs []*GoParameter, source string) (*GoParameter, GoFieldPath, error) {
 	for _, input := range inputs {
+		inputField, err := input.typ.findField(source)
+		if err != nil {
+			return nil, nil, err
+		}
 
-		// see if the input contains our output, otherwise continue
-		if inputField := input.typ.findField(source); inputField != nil {
-			return input, inputField
+		if inputField != nil {
+			return input, inputField, nil
 		}
 	}
 
-	return nil, nil
+	return nil, nil, nil
 }
 
 func (m *Generator) buildMapping(f *GoFunction) ([]*ResolvedMapping, error) {
@@ -272,7 +277,9 @@ func (m *Generator) buildMapping(f *GoFunction) ([]*ResolvedMapping, error) {
 				}
 			}
 
-		} else if param, inputField := m.findField(f.inputs, source); inputField != nil {
+		} else if param, inputField, err := m.findField(f.inputs, source); err != nil {
+			return nil, fmt.Errorf("field %s: %w", field.name, err)
+		} else if inputField != nil {
 			// see if the input contains our output, otherwise continue
 
 			generator, canFail := m.buildGenerator(inputField.typ(), field.typ)
@@ -333,7 +340,10 @@ func (m *Generator) buildEnumMapping(f *GoFunction, field *GoField, directive st
 		source = opts.from
 	}
 
-	param, inputField := m.findField(f.inputs, source)
+	param, inputField, err := m.findField(f.inputs, source)
+	if err != nil {
+		return nil, fmt.Errorf("map: %w", err)
+	}
 	if inputField == nil {
 		return nil, fmt.Errorf("map: field %q not found in inputs", source)
 	}
@@ -494,7 +504,10 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 		source = opts.from
 	}
 
-	param, inputField := m.findField(f.inputs, source)
+	param, inputField, err := m.findField(f.inputs, source)
+	if err != nil {
+		return nil, err
+	}
 	if inputField == nil {
 		return nil, fmt.Errorf("field %q not found in inputs", source)
 	}
@@ -695,7 +708,11 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 			source = f.options[field.name].from
 		}
 
-		if param, inputField := m.findField(f.inputs, source); inputField != nil {
+		param, inputField, err := m.findField(f.inputs, source)
+		if err != nil {
+			return nil, err
+		}
+		if inputField != nil {
 			inputParam = param
 			inputExpr = jen.Id(param.name).Op(".").Add(inputField.id())
 			sourceFieldType = inputField.typ()

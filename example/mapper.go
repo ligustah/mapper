@@ -106,7 +106,8 @@ type AdvancedMapper interface {
 
 	// AtNs is read off a method of the source value. Owner and Level need no
 	// annotation: string -> []byte and conversions between integer types, named or
-	// not, are derived.
+	// not, are derived. Neither does OwnerId, a field name that has no exact match
+	// falls back to a case-insensitive one, so it finds OwnerID.
 	// field:AtNs from:"At" method:"UnixNano"
 	MapEvent(src *models.Event) *protos.EventProto
 }

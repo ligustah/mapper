@@ -111,8 +111,9 @@ const (
 
 // EventProto demonstrates derived conversions onto bytes and a named integer type
 type EventProto struct {
-	ID    string
-	AtNs  int64
-	Owner []byte
-	Level Level
+	ID      string
+	AtNs    int64
+	Owner   []byte
+	OwnerId int64
+	Level   Level
 }

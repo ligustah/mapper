@@ -105,6 +105,14 @@ field is derived from a `T` → `U` converter by wrapping it in a nil check, so 
 field stays nil. A converter registered for `*T` itself is called directly and is
 expected to handle nil on its own.
 
+### Field Matching
+
+An output field is matched to an input field of the same name. Only when there is no
+exact match does the lookup fall back to a case-insensitive one, so protoc's `SetId`
+finds ent's `SetID` without a directive. Two candidates that both match that way
+(`Id` next to `ID`) are an error rather than a silent pick, spell the name exactly
+with `from:` in that case.
+
 ### Field Mapping Directives
 
 In method doc comments:

@@ -139,10 +139,11 @@ func (m AdvancedMapperImpl) MapEvent(src *models.Event) *protos.EventProto {
 	}
 
 	return &protos.EventProto{
-		ID:    src.ID,
-		AtNs:  src.At.UnixNano(),
-		Owner: []byte(src.Owner),
-		Level: protos.Level(src.Level),
+		ID:      src.ID,
+		AtNs:    src.At.UnixNano(),
+		Owner:   []byte(src.Owner),
+		OwnerId: src.OwnerID,
+		Level:   protos.Level(src.Level),
 	}
 }
 

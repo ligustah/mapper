@@ -179,50 +179,66 @@ func (g *GoType) String() string {
 	return g.TypeName
 }
 
-func (g *GoType) findField(source string) GoFieldPath {
+// findField resolves a dotted path such as `Edges.Set.Name` to the fields along it.
+// A nil path means the source has no such field, an error means it is ambiguous.
+func (g *GoType) findField(source string) (GoFieldPath, error) {
 	return g.find(strings.Split(source, "."))
 }
 
-func (g *GoType) find(source []string) GoFieldPath {
+func (g *GoType) find(source []string) (GoFieldPath, error) {
 	if len(source) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	if field := g.getField(source[0]); field != nil {
-		fields := GoFieldPath{field}
-
-		if len(source) > 1 {
-			return append(fields, field.typ.find(source[1:])...)
-		}
-
-		return fields
+	field, err := g.getField(source[0])
+	if err != nil || field == nil {
+		return nil, err
 	}
 
-	return nil
+	fields := GoFieldPath{field}
+	if len(source) == 1 {
+		return fields, nil
+	}
+
+	rest, err := field.typ.find(source[1:])
+	if err != nil || rest == nil {
+		return nil, err
+	}
+
+	return append(fields, rest...), nil
 }
 
-func (g *GoType) getField(name string) *GoField {
+// getField finds a field by name. Only when no field matches exactly does it fall
+// back to comparing case-insensitively, so `SetId` finds `SetID`. Two fields that
+// both match that way, e.g. `Id` next to `ID`, are reported instead of picked from.
+func (g *GoType) getField(name string) (*GoField, error) {
 	// go one lever deeper, if this is an indirect type
 	fields := g.Fields
 	if g.Element != nil {
 		fields = g.Element.Fields
 	}
 
-	// first pass: look for exact match
 	for _, field := range fields {
 		if field.name == name {
-			return field
+			return field, nil
 		}
 	}
 
-	// second pass: case-insensitive match
+	var found *GoField
 	for _, field := range fields {
-		if strings.ToLower(field.name) == strings.ToLower(name) {
-			return field
+		if !strings.EqualFold(field.name, name) {
+			continue
 		}
+
+		if found != nil {
+			return nil, fmt.Errorf("field %q matches both %s and %s of %s, spell it exactly",
+				name, found.name, field.name, g)
+		}
+
+		found = field
 	}
 
-	return nil
+	return found, nil
 }
 
 func (g *GoType) zero() *jen.Statement {

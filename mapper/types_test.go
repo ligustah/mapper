@@ -105,6 +105,51 @@ func Test_splitPackageAndType(t *testing.T) {
 	}
 }
 
+// TestGetFieldCaseInsensitive guards the fallback that lets protoc's `SetId` find
+// ent's `SetID`: exact names win, a single case-insensitive match is taken, and two
+// of them are an error rather than a silent pick.
+func TestGetFieldCaseInsensitive(t *testing.T) {
+	pkg := types.NewPackage("example.com/ent", "ent")
+	fields := []*types.Var{
+		types.NewField(token.NoPos, pkg, "SetID", types.Typ[types.Int64], false),
+		types.NewField(token.NoPos, pkg, "Name", types.Typ[types.String], false),
+		types.NewField(token.NoPos, pkg, "Id", types.Typ[types.String], false),
+		types.NewField(token.NoPos, pkg, "ID", types.Typ[types.String], false),
+	}
+	row := getGoType(named(pkg, "Row", types.NewStruct(fields, nil)))
+
+	tests := []struct {
+		name    string
+		want    string
+		wantErr bool
+	}{
+		{name: "SetID", want: "SetID"},
+		{name: "SetId", want: "SetID"},
+		{name: "setid", want: "SetID"},
+		{name: "Id", want: "Id"},
+		{name: "ID", want: "ID"},
+		{name: "iD", wantErr: true},
+		{name: "Missing"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := row.getField(tt.name)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("getField(%q) error = %v, wantErr %v", tt.name, err, tt.wantErr)
+			}
+
+			gotName := ""
+			if got != nil {
+				gotName = got.name
+			}
+			if gotName != tt.want {
+				t.Errorf("getField(%q) = %q, want %q", tt.name, gotName, tt.want)
+			}
+		})
+	}
+}
+
 func TestQualifyReference(t *testing.T) {
 	const pkg = "example.com/app/mapping"
 	imports := map[string]string{
