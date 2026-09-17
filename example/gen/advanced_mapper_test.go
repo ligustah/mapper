@@ -345,6 +345,35 @@ func TestAdvancedMapper_MapEvent(t *testing.T) {
 	}
 }
 
+// TestAdvancedMapper_MapOrder covers a from: path through an edge pointer: with an
+// error return the OrErr accessor reports an unloaded edge, without one the field
+// stays zero
+func TestAdvancedMapper_MapOrder(t *testing.T) {
+	m := AdvancedMapperImpl{}
+
+	unloaded := &models.Order{ID: "ord-1"}
+	loaded := &models.Order{ID: "ord-2", Edges: models.OrderEdges{Customer: &models.Customer{Name: "acme"}}}
+
+	if _, err := m.MapOrder(unloaded); err == nil {
+		t.Error("MapOrder should report an unloaded edge")
+	}
+
+	proto, err := m.MapOrder(loaded)
+	if err != nil {
+		t.Fatalf("MapOrder() error = %v", err)
+	}
+	if proto.ID != "ord-2" || proto.CustomerName != "acme" {
+		t.Errorf("MapOrder mismatch: got %+v", proto)
+	}
+
+	if loose := m.MapOrderLoose(unloaded); loose.ID != "ord-1" || loose.CustomerName != "" {
+		t.Errorf("MapOrderLoose on an unloaded edge: got %+v", loose)
+	}
+	if loose := m.MapOrderLoose(loaded); loose.CustomerName != "acme" {
+		t.Errorf("MapOrderLoose mismatch: got %+v", loose)
+	}
+}
+
 // TestAdvancedMapper_MapArrayConvert covers a fixed-size array whose elements need
 // a conversion, so the array is rebuilt element by element
 func TestAdvancedMapper_MapArrayConvert(t *testing.T) {

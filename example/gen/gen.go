@@ -198,6 +198,36 @@ func (m AdvancedMapperImpl) MapOptionalExample(src *models.OptionalExample) *pro
 	}
 }
 
+func (m AdvancedMapperImpl) MapOrder(src *models.Order) (*protos.OrderProto, error) {
+	if src == nil {
+		return nil, nil
+	}
+	tmp0, err := src.Edges.CustomerOrErr()
+	if err != nil {
+		return nil, err
+	}
+
+	return &protos.OrderProto{
+		ID:           src.ID,
+		CustomerName: tmp0.Name,
+	}, nil
+}
+
+func (m AdvancedMapperImpl) MapOrderLoose(src *models.Order) *protos.OrderProto {
+	if src == nil {
+		return nil
+	}
+	var tmp0 string
+	if src.Edges.Customer != nil {
+		tmp0 = src.Edges.Customer.Name
+	}
+
+	return &protos.OrderProto{
+		ID:           src.ID,
+		CustomerName: tmp0,
+	}
+}
+
 func (m AdvancedMapperImpl) MapPointerSlice(src *models.PointerSliceExample) *protos.PointerSliceExampleProto {
 	if src == nil {
 		return nil
@@ -330,7 +360,17 @@ func (m MapperImpl) MapJobReverse(job *protos.Job) *models.Job {
 		return nil
 	}
 	tmp0 := job.Group
-	tmp1 := job.ExternalId
+	var tmp1 string
+	if job.Payload != nil {
+		tmp1 = job.Payload.ContentType
+	}
+
+	var tmp2 []byte
+	if job.Payload != nil {
+		tmp2 = job.Payload.Body
+	}
+
+	tmp3 := job.ExternalId
 
 	return &models.Job{
 		ID:         job.Id,
@@ -338,9 +378,9 @@ func (m MapperImpl) MapJobReverse(job *protos.Job) *models.Job {
 		RunAt:      job.RunAt.AsTime(),
 		Group:      null.NewString(tmp0, !(tmp0 == "")),
 		Queue:      job.Queue,
-		DataType:   job.Payload.ContentType,
-		Data:       job.Payload.Body,
-		ExternalID: null.NewString(tmp1, !(tmp1 == "")),
+		DataType:   tmp1,
+		Data:       tmp2,
+		ExternalID: null.NewString(tmp3, !(tmp3 == "")),
 	}
 }
 

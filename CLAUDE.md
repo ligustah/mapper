@@ -105,6 +105,15 @@ field is derived from a `T` → `U` converter by wrapping it in a nil check, so 
 field stays nil. A converter registered for `*T` itself is called directly and is
 expected to handle nil on its own.
 
+### Nested Paths
+
+A `from:"Edges.Set.Name"` path that crosses a pointer never dereferences nil. When
+the method returns an error and the type holding the pointer declares
+`SetOrErr() (*Set, error)`, the accessor ent generates for every edge, the pointer
+is read through it and an edge that was not loaded comes back as that error.
+Otherwise the pointer is nil-checked and the target field keeps its zero value.
+The leaf itself may be a pointer, that is left to the converter as usual.
+
 ### Field Matching
 
 An output field is matched to an input field of the same name. Only when there is no

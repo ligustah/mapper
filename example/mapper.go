@@ -110,4 +110,15 @@ type AdvancedMapper interface {
 	// falls back to a case-insensitive one, so it finds OwnerID.
 	// field:AtNs from:"At" method:"UnixNano"
 	MapEvent(src *models.Event) *protos.EventProto
+
+	// A from: path through a pointer never dereferences nil. Because this method
+	// returns an error, the edge is read through its OrErr accessor and an edge that
+	// was not loaded is reported.
+	// field:CustomerName from:"Edges.Customer.Name"
+	MapOrder(src *models.Order) (*protos.OrderProto, error)
+
+	// Without an error return the pointer is nil-checked instead and the field keeps
+	// its zero value.
+	// field:CustomerName from:"Edges.Customer.Name"
+	MapOrderLoose(src *models.Order) *protos.OrderProto
 }

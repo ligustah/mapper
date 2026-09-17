@@ -43,7 +43,7 @@ func (f *FunctionContext) tmpVar() string {
 	return name
 }
 
-func (f *FunctionContext) handleError(input jen.Code) jen.Code {
+func (f *FunctionContext) handleError(input jen.Code) *jen.Statement {
 	tmp := f.tmpVar()
 
 	f.add(jen.List(jen.Id(tmp), jen.Err()).Op(":=").Add(input).Line())

@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"errors"
+	"time"
+)
 
 // User demonstrates basic struct mapping
 type User struct {
@@ -113,6 +116,32 @@ type OptionalExample struct {
 	ID     string
 	Detail *Detail
 	Item   *Item
+}
+
+// Customer is the far side of an edge
+type Customer struct {
+	Name string
+}
+
+// OrderEdges mirrors the Edges struct ent generates: the pointer is nil unless the
+// edge was loaded, and the OrErr accessor reports that instead of a nil dereference
+type OrderEdges struct {
+	Customer *Customer
+}
+
+// CustomerOrErr is the accessor ent generates for an edge
+func (e OrderEdges) CustomerOrErr() (*Customer, error) {
+	if e.Customer == nil {
+		return nil, errors.New("edge customer was not loaded")
+	}
+
+	return e.Customer, nil
+}
+
+// Order demonstrates a from: path that crosses an edge
+type Order struct {
+	ID    string
+	Edges OrderEdges
 }
 
 // Event demonstrates conversions the generator derives on its own: a time read

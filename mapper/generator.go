@@ -284,11 +284,12 @@ func (m *Generator) buildMapping(f *GoFunction) ([]*ResolvedMapping, error) {
 
 			generator, canFail := m.buildGenerator(inputField.typ(), field.typ)
 			if generator != nil {
+				guarded, guardFails := guardPath(f, param, inputField, generator)
 				mapping = &ResolvedMapping{
 					output:    field,
 					input:     jen.Id(param.name).Op(".").Add(inputField.id()),
-					generator: generator,
-					canFail:   canFail,
+					generator: guarded,
+					canFail:   canFail || guardFails,
 				}
 			} else {
 				log.Printf("Can't convert from type %s to %s", inputField.typ(), field.typ)
@@ -393,6 +394,8 @@ func (m *Generator) buildEnumMapping(f *GoFunction, field *GoField, directive st
 		srcType.Kind == SliceKind || dstType.Kind == SliceKind:
 		return nil, fmt.Errorf("map: cannot map %s to %s, both sides need to be values, pointers or slices", srcType, dstType)
 	}
+
+	gen, _ = guardPath(f, param, inputField, gen)
 
 	return &ResolvedMapping{
 		output:    field,
@@ -565,11 +568,13 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 		gen = methodConverter(methodName, elemType, false)
 	}
 
+	gen, guardFails := guardPath(f, param, inputField, gen)
+
 	return &ResolvedMapping{
 		output:    field,
 		input:     inputExpr,
 		generator: gen,
-		canFail:   false,
+		canFail:   guardFails,
 	}, nil
 }
 
@@ -686,6 +691,7 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 	}
 	funcInputType := getGoType(funcInputRawType)
 	var inputParam *GoParameter
+	var inputPath GoFieldPath
 	var inputExpr *jen.Statement
 	var sourceFieldType *GoType // actual type of the source field (may differ from funcInputType for pointers)
 
@@ -714,6 +720,7 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 		}
 		if inputField != nil {
 			inputParam = param
+			inputPath = inputField
 			inputExpr = jen.Id(param.name).Op(".").Add(inputField.id())
 			sourceFieldType = inputField.typ()
 		}
@@ -754,11 +761,16 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 		generator = mapPointerToPointer(field.typ.Element, generator)
 	}
 
+	guardFails := false
+	if inputPath != nil {
+		generator, guardFails = guardPath(f, inputParam, inputPath, generator)
+	}
+
 	return &ResolvedMapping{
 		output:    field,
 		input:     inputExpr,
 		generator: generator,
-		canFail:   hasError,
+		canFail:   hasError || guardFails,
 	}, nil
 }
 

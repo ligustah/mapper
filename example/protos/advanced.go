@@ -101,6 +101,12 @@ type OptionalExampleProto struct {
 	Item   *ItemProto
 }
 
+// OrderProto flattens a field reached through an edge
+type OrderProto struct {
+	ID           string
+	CustomerName string
+}
+
 // Level is a numbered enum narrower than the model's plain int
 type Level uint8
 
