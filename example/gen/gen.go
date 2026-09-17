@@ -12,6 +12,21 @@ import (
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 )
 
+func (m AdvancedMapperImpl) FillEvent(src *protos.EventProto, b *models.EventCreate) *models.EventCreate {
+	if src == nil {
+		return b
+	}
+	b.SetAt(example.FromNanos(src.AtNs))
+	b.SetCustomerID(src.OwnerId)
+	b.SetID(src.ID)
+	b.SetLevel(int(src.Level))
+	b.SetNote(src.Note)
+	b.SetOwner(string(src.Owner))
+	b.SetNillableRetiredAt(example.NanosOrNil(src.RetiredAtNs))
+
+	return b
+}
+
 func (m AdvancedMapperImpl) MapArrayConvert(src *models.ArrayConvertExample) *protos.ArrayConvertExampleProto {
 	if src == nil {
 		return nil

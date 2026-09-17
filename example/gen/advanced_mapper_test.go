@@ -390,6 +390,39 @@ func TestAdvancedMapper_MapOrder(t *testing.T) {
 	}
 }
 
+// TestAdvancedMapper_FillEvent covers a builder target: one setter call per column,
+// the nillable setter for a converter that hands back a pointer, the id form of an
+// edge, and an untouched builder for a nil source
+func TestAdvancedMapper_FillEvent(t *testing.T) {
+	m := AdvancedMapperImpl{}
+
+	at := time.Date(2026, time.September, 17, 12, 0, 0, 500, time.UTC)
+	src := &protos.EventProto{ID: "ev-1", AtNs: at.UnixNano(), Owner: []byte("root"), OwnerId: 7, Level: protos.LevelWarn, Note: "hi"}
+
+	got := m.FillEvent(src, models.NewEventCreate()).Values
+	if got["id"] != "ev-1" || got["owner"] != "root" || got["level"] != 1 || got["note"] != "hi" || got["customer_id"] != int64(7) {
+		t.Errorf("columns mismatch: got %v", got)
+	}
+	if set, ok := got["at"].(time.Time); !ok || !set.Equal(at) {
+		t.Errorf("at mismatch: got %v, want %v", got["at"], at)
+	}
+	if _, ok := got["retired_at"]; ok {
+		t.Errorf("retired_at should not be set for a zero source, got %v", got["retired_at"])
+	}
+	if _, ok := got["customer"]; ok {
+		t.Errorf("the edge should be set by id only, got %v", got["customer"])
+	}
+
+	src.RetiredAtNs = at.UnixNano()
+	if set, ok := m.FillEvent(src, models.NewEventCreate()).Values["retired_at"].(time.Time); !ok || !set.Equal(at) {
+		t.Errorf("retired_at mismatch: got %v, want %v", set, at)
+	}
+
+	if untouched := m.FillEvent(nil, models.NewEventCreate()).Values; len(untouched) != 0 {
+		t.Errorf("a nil source should leave the builder untouched, got %v", untouched)
+	}
+}
+
 // TestAdvancedMapper_MapArrayConvert covers a fixed-size array whose elements need
 // a conversion, so the array is rebuilt element by element
 func TestAdvancedMapper_MapArrayConvert(t *testing.T) {

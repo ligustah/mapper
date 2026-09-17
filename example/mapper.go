@@ -128,4 +128,15 @@ type AdvancedMapper interface {
 	// its zero value.
 	// field:CustomerName from:"Edges.Customer.Name"
 	MapOrderLoose(src *models.Order) *protos.OrderProto
+
+	// A method whose output type is also one of its inputs fills a builder: every
+	// `SetX(v)` setter returning the builder is a target field named X, and the
+	// caller sets whatever the source does not carry. Two ent conventions are
+	// folded in: SetNillableX takes over from SetX when the source or the converter
+	// hands back a pointer, and SetCustomer steps aside for SetCustomerID. Variadic
+	// adders such as AddTagIDs are not fields.
+	// field:At from:"AtNs" using:"FromNanos"
+	// field:RetiredAt from:"RetiredAtNs" using:"NanosOrNil"
+	// field:CustomerID from:"OwnerId"
+	FillEvent(src *protos.EventProto, b *models.EventCreate) *models.EventCreate
 }

@@ -108,6 +108,28 @@ like `timestamppb.New`, has its pointer kept rather than copied and re-addressed
 A `*T` → `U` field mapped through `method:` or `using:` keeps the zero value of `U`
 when the pointer is nil, the method or function never runs on a zero `T`.
 
+### Builder Targets
+
+A method whose output type is also one of its inputs fills a builder instead of
+returning a struct, the shape ent's `Create` and `UpdateOne` builders have:
+
+```go
+// field:ID from:"-"
+CommitRow(in *proto.Commit, b *ent.CommitRowCreate) *ent.CommitRowCreate
+```
+
+Every method `SetX(v T)` on the builder that returns the builder is a target field
+named `X` of type `T`, resolved with the same rules and directives as a struct field,
+and rendered as one setter call each. The builder comes back for chaining, so the
+caller adds what the source does not carry: `m.CommitRow(c, tx.CommitRow.Create()).SetRef(ref).Exec(ctx)`.
+A nil source leaves the builder untouched. Detection is generic, two ent conventions
+are layered on top: `SetNillableX(*T)` is folded into `X` and used instead of `SetX`
+when the source field or the converter hands back a pointer, so nil never becomes
+a zero value; and for an edge with both `SetX(*Entity)` and `SetXID(id)` the id form
+is the field, unless a directive addresses `X` and not `XID`. Variadic adders like
+`AddFileIDs(...)` are not setters. Everything else stays strict, a setter without a
+source has to be ignored with `from:"-"`.
+
 ### Nested Paths
 
 A `from:"Edges.Set.Name"` path that crosses a pointer never dereferences nil. When

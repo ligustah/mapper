@@ -201,125 +201,138 @@ func (m *Generator) findField(inputs []*GoParameter, source string) (*GoParamete
 	return nil, nil, nil
 }
 
-func (m *Generator) buildMapping(f *GoFunction) ([]*ResolvedMapping, error) {
-	// look at all the Fields required for the output
-	// and try to map them to input Fields
-
-	fields := f.output.Fields
-	if f.output.Element != nil {
-		fields = f.output.Element.Fields
-	}
-
+// buildMapping resolves how each of fields is produced from the inputs of f. Fields
+// ignored with `from:"-"` are left out.
+func (m *Generator) buildMapping(f *GoFunction, fields []*GoField) ([]*ResolvedMapping, error) {
 	var mappings []*ResolvedMapping
 	for _, field := range fields {
-		source := field.name
-
-		// apply output options
-		if options, ok := f.options[field.name]; ok {
-			if options.from == "-" {
-				continue
-			} else if options.from != "" {
-				source = options.from
-			}
-
-			// handle method: directive — call a named method on the source field value
-			if options.method != "" {
-				mapping, err := m.buildMethodMapping(f, field, options.method)
-				if err != nil {
-					return nil, fmt.Errorf("field %s: %w", field.name, err)
-				}
-				if mapping != nil {
-					mappings = append(mappings, mapping)
-					continue
-				}
-			}
-
-			// handle map: directive — switch over explicitly listed values
-			if options.mapping != "" {
-				mapping, err := m.buildEnumMapping(f, field, options.mapping)
-				if err != nil {
-					return nil, fmt.Errorf("field %s: %w", field.name, err)
-				}
-				if mapping != nil {
-					mappings = append(mappings, mapping)
-					continue
-				}
-			}
-
-			// handle using directive
-			if options.using != "" {
-				mapping, err := m.buildUsingMapping(f, field, options.using)
-				if err != nil {
-					return nil, fmt.Errorf("field %s: %w", field.name, err)
-				}
-				if mapping != nil {
-					mappings = append(mappings, mapping)
-					continue
-				}
-			}
+		mapping, err := m.resolveField(f, field)
+		if err != nil {
+			return nil, err
 		}
 
-		// resolve the output
-		var mapping *ResolvedMapping
-
-		if source == "." {
-			// special case of referring directly to the input type
-			for _, input := range f.inputs {
-				generator, canFail := m.buildGenerator(input.typ, field.typ)
-
-				if generator != nil {
-					mapping = &ResolvedMapping{
-						output:    field,
-						input:     jen.Id(input.name),
-						generator: generator,
-						canFail:   canFail,
-					}
-				}
-			}
-
-		} else if param, inputField, err := m.findField(f.inputs, source); err != nil {
-			return nil, fmt.Errorf("field %s: %w", field.name, err)
-		} else if inputField != nil {
-			// see if the input contains our output, otherwise continue
-
-			generator, canFail := m.buildGenerator(inputField.typ(), field.typ)
-			if generator != nil {
-				guarded, guardFails := guardPath(f, param, inputField, generator)
-				mapping = &ResolvedMapping{
-					output:    field,
-					input:     jen.Id(param.name).Op(".").Add(inputField.id()),
-					generator: guarded,
-					canFail:   canFail || guardFails,
-				}
-			} else {
-				log.Printf("Can't convert from type %s to %s", inputField.typ(), field.typ)
-			}
+		if mapping != nil {
+			mappings = append(mappings, mapping)
 		}
-
-		if mapping == nil {
-			// If no custom mapper was used and no direct mapping found, try buildGenerator
-			for _, input := range f.inputs {
-				generator, canFail := m.buildGenerator(input.typ, field.typ)
-				if generator != nil {
-					mapping = &ResolvedMapping{
-						output:    field,
-						input:     jen.Id(input.name),
-						generator: generator,
-						canFail:   canFail,
-					}
-					break
-				}
-			}
-		}
-
-		if mapping == nil {
-			return nil, fmt.Errorf("could not find source for output %s", field.name)
-		}
-
-		mappings = append(mappings, mapping)
 	}
 
 	return mappings, nil
+}
+
+// structFields are the fields of a struct or pointer-to-struct target.
+func structFields(typ *GoType) []*GoField {
+	if typ.Element != nil {
+		return typ.Element.Fields
+	}
+
+	return typ.Fields
+}
+
+// resolveField finds the source for one output field and the generator that turns
+// it into the field's type. A nil mapping means the field is ignored.
+func (m *Generator) resolveField(f *GoFunction, field *GoField) (*ResolvedMapping, error) {
+	source := field.name
+
+	// apply output options
+	if options, ok := f.options[field.name]; ok {
+		if options.from == "-" {
+			return nil, nil
+		} else if options.from != "" {
+			source = options.from
+		}
+
+		// handle method: directive — call a named method on the source field value
+		if options.method != "" {
+			mapping, err := m.buildMethodMapping(f, field, options.method)
+			if err != nil {
+				return nil, fmt.Errorf("field %s: %w", field.name, err)
+			}
+			if mapping != nil {
+				return mapping, nil
+			}
+		}
+
+		// handle map: directive — switch over explicitly listed values
+		if options.mapping != "" {
+			mapping, err := m.buildEnumMapping(f, field, options.mapping)
+			if err != nil {
+				return nil, fmt.Errorf("field %s: %w", field.name, err)
+			}
+			if mapping != nil {
+				return mapping, nil
+			}
+		}
+
+		// handle using directive
+		if options.using != "" {
+			mapping, err := m.buildUsingMapping(f, field, options.using)
+			if err != nil {
+				return nil, fmt.Errorf("field %s: %w", field.name, err)
+			}
+			if mapping != nil {
+				return mapping, nil
+			}
+		}
+	}
+
+	// resolve the output
+	var mapping *ResolvedMapping
+
+	if source == "." {
+		// special case of referring directly to the input type
+		for _, input := range f.inputs {
+			generator, canFail := m.buildGenerator(input.typ, field.typ)
+
+			if generator != nil {
+				mapping = &ResolvedMapping{
+					output:    field,
+					input:     jen.Id(input.name),
+					generator: generator,
+					canFail:   canFail,
+				}
+			}
+		}
+
+	} else if param, inputField, err := m.findField(f.inputs, source); err != nil {
+		return nil, fmt.Errorf("field %s: %w", field.name, err)
+	} else if inputField != nil {
+		// see if the input contains our output, otherwise continue
+
+		generator, canFail := m.buildGenerator(inputField.typ(), field.typ)
+		if generator != nil {
+			guarded, guardFails := guardPath(f, param, inputField, generator)
+			mapping = &ResolvedMapping{
+				output:    field,
+				input:     jen.Id(param.name).Op(".").Add(inputField.id()),
+				generator: guarded,
+				canFail:   canFail || guardFails,
+			}
+		} else {
+			log.Printf("Can't convert from type %s to %s", inputField.typ(), field.typ)
+		}
+	}
+
+	if mapping == nil {
+		// If no custom mapper was used and no direct mapping found, try buildGenerator
+		for _, input := range f.inputs {
+			generator, canFail := m.buildGenerator(input.typ, field.typ)
+			if generator != nil {
+				mapping = &ResolvedMapping{
+					output:    field,
+					input:     jen.Id(input.name),
+					generator: generator,
+					canFail:   canFail,
+				}
+				break
+			}
+		}
+	}
+
+	if mapping == nil {
+		return nil, fmt.Errorf("could not find source for output %s", field.name)
+	}
+
+	return mapping, nil
 }
 
 // buildEnumMapping handles // field:F map:"a=X,b=Y" — generates a switch over the
@@ -561,9 +574,11 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 
 	// Build the generator: if the source is *T, use nil-safe pointer wrapping.
 	gen := methodConverter(methodName, elemType, false)
+	produces := resultGoType
 	switch {
 	case srcType.Kind == PointerKind && field.typ.Kind == PointerKind:
 		gen = mapPointerToPointer(resultGoType, gen)
+		produces = resultGoType.pointer()
 	case srcType.Kind == PointerKind:
 		gen = mapPointerToValue(resultGoType, gen)
 	}
@@ -575,6 +590,7 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 		input:     inputExpr,
 		generator: gen,
 		canFail:   guardFails,
+		produces:  produces,
 	}, nil
 }
 
@@ -755,11 +771,13 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 	// If the source field is *T but the function/method expects T, guard the nil
 	// case rather than calling through a raw pointer: a *U target stays nil, a U
 	// target keeps its zero value.
+	produces := getGoType(funcSig.Results().At(0).Type())
 	if sourceFieldType != nil && sourceFieldType.Kind == PointerKind && funcInputType.Kind != PointerKind {
 		if field.typ.Kind == PointerKind {
 			generator = mapPointerToPointer(field.typ.Element, generator)
+			produces = produces.pointer()
 		} else {
-			generator = mapPointerToValue(getGoType(funcSig.Results().At(0).Type()), generator)
+			generator = mapPointerToValue(produces, generator)
 		}
 	}
 
@@ -773,6 +791,7 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 		input:     inputExpr,
 		generator: generator,
 		canFail:   hasError || guardFails,
+		produces:  produces,
 	}, nil
 }
 
@@ -868,6 +887,10 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 }
 
 func (m *Generator) generateMethod(mapperName string, f *GoFunction) error {
+	if builder := detectBuilder(f); builder != nil {
+		return m.generateBuilderMethod(mapperName, f, builder)
+	}
+
 	to := f.output
 	switch {
 	case to.Kind == StructKind:
@@ -876,23 +899,14 @@ func (m *Generator) generateMethod(mapperName string, f *GoFunction) error {
 		return errors.New("target type must be a struct or a pointer to a struct")
 	}
 
-	resolved, err := m.buildMapping(f)
+	resolved, err := m.buildMapping(f, structFields(to))
 	if err != nil {
 		return err
 	}
 
-	canFail := false
-	for _, r := range resolved {
-		if r.canFail {
-			canFail = true
-			break
-		}
-	}
-
-	if canFail && !f.hasError {
-		return errors.New("at least one converter can fail, function needs to return error")
-	} else if !canFail && f.hasError {
-		return errors.New("no converter can fail, function can never return error")
+	canFail, err := checkCanFail(f, resolved)
+	if err != nil {
+		return err
 	}
 
 	returnType := jen.Empty()
@@ -905,23 +919,7 @@ func (m *Generator) generateMethod(mapperName string, f *GoFunction) error {
 		returnType = jen.Parens(jen.List(returnType, jen.Id("error")))
 	}
 
-	var inputTypes []jen.Code
-	for i, input := range f.inputs {
-		name := input.name
-		if name == "" {
-			name = fmt.Sprintf("input%d", i)
-		}
-		inputType := jen.Id(name)
-
-		if input.typ.Kind == PointerKind {
-			inputType.Op("*")
-		}
-		inputType.Qual(input.typ.Pkg, input.typ.Name)
-
-		inputTypes = append(inputTypes, inputType)
-	}
-
-	function := jen.Func().Params(jen.Id("m").Id(mapperName)).Id(f.name).Params(jen.List(inputTypes...)).Add(returnType)
+	function := jen.Func().Params(jen.Id("m").Id(mapperName)).Id(f.name).Params(inputParams(f)...).Add(returnType)
 
 	// prepare all the Fields
 	body := jen.Empty()
@@ -958,6 +956,41 @@ func (m *Generator) generateMethod(mapperName string, f *GoFunction) error {
 	m.file.Add(function)
 
 	return nil
+}
+
+// checkCanFail reports whether any mapping can fail and verifies that the method's
+// signature agrees: an error return exactly when one is needed.
+func checkCanFail(f *GoFunction, resolved []*ResolvedMapping) (bool, error) {
+	canFail := false
+	for _, r := range resolved {
+		if r.canFail {
+			canFail = true
+			break
+		}
+	}
+
+	if canFail && !f.hasError {
+		return false, errors.New("at least one converter can fail, function needs to return error")
+	} else if !canFail && f.hasError {
+		return false, errors.New("no converter can fail, function can never return error")
+	}
+
+	return canFail, nil
+}
+
+// inputParams renders the parameter list of a generated method.
+func inputParams(f *GoFunction) []jen.Code {
+	var params []jen.Code
+	for i, input := range f.inputs {
+		name := input.name
+		if name == "" {
+			name = fmt.Sprintf("input%d", i)
+		}
+
+		params = append(params, jen.Id(name).Add(input.typ.ref()))
+	}
+
+	return params
 }
 
 // nilInputReturn guards a method whose only input is a pointer: nil in gives nil

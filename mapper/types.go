@@ -80,6 +80,9 @@ type ResolvedMapping struct {
 	input     *jen.Statement
 	canFail   bool
 	generator GeneratorFunc
+	// produces is the type the generator hands back when it is not the output
+	// field's own, as a method: or using: result may be
+	produces *GoType
 }
 
 type GoInterface struct {

@@ -539,6 +539,26 @@ func (m *MyCustomMapperImpl) MapUser(source *UserSource) (*UserTarget, error) {
 
 This feature provides a powerful way to extend the `mapper` tool's capabilities with your own domain-specific conversion logic.
 
+### 10. Filling Builders
+
+Some targets are not structs but builders, such as the `Create` and `UpdateOne` builders ent generates. A method whose output type is also one of its inputs fills that builder instead of returning a struct:
+
+```go
+// mapper:generate
+type Mapper interface {
+	// field:ID from:"-"
+	CommitRow(in *proto.Commit, b *ent.CommitRowCreate) *ent.CommitRowCreate
+}
+```
+
+Every method `SetX(v T)` on the builder that returns the builder is a target field named `X` of type `T`. It is resolved with the same rules and directives as a struct field and rendered as one setter call. The builder is returned for chaining, so the caller adds what the source does not carry:
+
+```go
+err := m.CommitRow(commit, tx.CommitRow.Create()).SetRef(ref.Hash).SetSetID(setID).Exec(ctx)
+```
+
+A nil source leaves the builder untouched. Two ent conventions are recognised: `SetNillableX(*T)` is used instead of `SetX(T)` when the source field or the converter hands back a pointer, so nil never turns into a zero value; and where an edge has both `SetX(*Entity)` and `SetXID(id)`, the id form is the field unless a directive addresses `X`. Variadic adders such as `AddFileIDs(...)` are not fields. As with structs, a setter without a source is an error until it is ignored with `from:"-"`.
+
 ## Building and Running the Generator
 
 To build the `mapper` tool from source:
