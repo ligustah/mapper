@@ -128,7 +128,10 @@ when the source field or the converter hands back a pointer, so nil never become
 a zero value; and for an edge with both `SetX(*Entity)` and `SetXID(id)` the id form
 is the field, unless a directive addresses `X` and not `XID`. Variadic adders like
 `AddFileIDs(...)` are not setters. Everything else stays strict, a setter without a
-source has to be ignored with `from:"-"`.
+source has to be ignored with `from:"-"`. The one opt-out is `// mapper:skip-optional`,
+on a method or on the whole interface: an optional setter, one with a
+`SetNillableX` twin, that has neither a directive nor a source field of its name is
+then left unset. Required setters still fail.
 
 ### Nested Paths
 

@@ -53,6 +53,17 @@ func (c *EventCreate) SetNillableRetiredAt(v *time.Time) *EventCreate {
 	return c
 }
 
+// SetDeletedAt sets the optional "deleted_at" column
+func (c *EventCreate) SetDeletedAt(v time.Time) *EventCreate { return c.set("deleted_at", v) }
+
+// SetNillableDeletedAt sets the "deleted_at" column if v is not nil
+func (c *EventCreate) SetNillableDeletedAt(v *time.Time) *EventCreate {
+	if v != nil {
+		c.SetDeletedAt(*v)
+	}
+	return c
+}
+
 // SetCustomerID sets the "customer" edge by id
 func (c *EventCreate) SetCustomerID(v int64) *EventCreate { return c.set("customer_id", v) }
 

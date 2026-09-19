@@ -18,6 +18,10 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
+// skipOptionalDirective, on an interface or one of its methods, leaves a builder's
+// optional setters unset when no source field has their name.
+const skipOptionalDirective = "mapper:skip-optional"
+
 type Parser struct{}
 
 func NewParser() *Parser {
@@ -125,12 +129,13 @@ func (p *Parser) parsePackage(pkg *packages.Package) []*GoInterface {
 			if iface, ok := typ.Underlying().(*types.Interface); ok {
 				interfaceDocs := docs[typ.Obj().Name()]
 
-				// check if the doc contains the mapper:generate directive
-				hasGenerateDirective := false
+				hasGenerateDirective, skipOptional := false, false
 				for _, line := range strings.Split(interfaceDocs.doc, "\n") {
-					if strings.TrimSpace(line) == "mapper:generate" {
+					switch strings.TrimSpace(line) {
+					case "mapper:generate":
 						hasGenerateDirective = true
-						break
+					case skipOptionalDirective:
+						skipOptional = true
 					}
 				}
 
@@ -147,6 +152,7 @@ func (p *Parser) parsePackage(pkg *packages.Package) []*GoInterface {
 						if err != nil {
 							log.Fatal(err)
 						}
+						goFunc.skipOptional = goFunc.skipOptional || skipOptional
 
 						goIface.Methods = append(goIface.Methods, goFunc)
 					}
@@ -199,6 +205,11 @@ func (p *Parser) getGoFunction(method *types.Func, f funcDoc, pkg string, import
 	// parse all comments for options
 	for _, s := range f.doc {
 		trimmed := strings.TrimSpace(s)
+
+		if trimmed == "// "+skipOptionalDirective {
+			goFunc.skipOptional = true
+			continue
+		}
 
 		const fieldPrefix = "// field:"
 		if strings.HasPrefix(trimmed, fieldPrefix) {

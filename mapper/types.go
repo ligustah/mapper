@@ -98,6 +98,9 @@ type GoFunction struct {
 	inputs   []*GoParameter
 	output   *GoType
 	options  map[string]*FieldOptions
+	// skipOptional leaves a builder's optional setters unset when no source field
+	// has their name, instead of failing
+	skipOptional bool
 }
 
 type GoFieldPath []*GoField

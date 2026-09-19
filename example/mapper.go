@@ -138,5 +138,15 @@ type AdvancedMapper interface {
 	// field:At from:"AtNs" using:"FromNanos"
 	// field:RetiredAt from:"RetiredAtNs" using:"NanosOrNil"
 	// field:CustomerID from:"OwnerId"
+	// field:DeletedAt from:"-"
 	FillEvent(src *protos.EventProto, b *models.EventCreate) *models.EventCreate
+
+	// An optional setter, one with a SetNillableX twin, would still need a source
+	// or `from:"-"` like any other. mapper:skip-optional, on a method or on the
+	// whole interface, leaves those without a source field of their name unset.
+	// Here that is RetiredAt and DeletedAt, Note is still set from src.Note.
+	// mapper:skip-optional
+	// field:At from:"AtNs" using:"FromNanos"
+	// field:CustomerID from:"OwnerId"
+	FillEventSparse(src *protos.EventProto, b *models.EventCreate) *models.EventCreate
 }

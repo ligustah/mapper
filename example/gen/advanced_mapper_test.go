@@ -423,6 +423,24 @@ func TestAdvancedMapper_FillEvent(t *testing.T) {
 	}
 }
 
+// TestAdvancedMapper_FillEventSparse covers mapper:skip-optional: optional setters
+// without a source field of their name stay unset, the others are still called
+func TestAdvancedMapper_FillEventSparse(t *testing.T) {
+	m := AdvancedMapperImpl{}
+
+	src := &protos.EventProto{ID: "ev-1", RetiredAtNs: 42, Note: "hi"}
+	got := m.FillEventSparse(src, models.NewEventCreate()).Values
+
+	if got["note"] != "hi" || got["id"] != "ev-1" {
+		t.Errorf("columns mismatch: got %v", got)
+	}
+	for _, unset := range []string{"retired_at", "deleted_at"} {
+		if v, ok := got[unset]; ok {
+			t.Errorf("%s should stay unset, got %v", unset, v)
+		}
+	}
+}
+
 // TestAdvancedMapper_MapArrayConvert covers a fixed-size array whose elements need
 // a conversion, so the array is rebuilt element by element
 func TestAdvancedMapper_MapArrayConvert(t *testing.T) {

@@ -137,6 +137,10 @@ func (m *Generator) generateBuilderMethod(mapperName string, f *GoFunction, targ
 	for _, bf := range target.fields {
 		field, setter := bf.value, bf.setter
 
+		if f.skipOptional && bf.nillable != nil && !m.hasSource(&src, field) {
+			continue
+		}
+
 		// a pointer source keeps its nil through the nillable setter rather than
 		// being flattened to a zero value
 		if bf.nillable != nil && m.sourceIsPointer(&src, field) {
@@ -199,6 +203,17 @@ func (m *Generator) generateBuilderMethod(mapperName string, f *GoFunction, targ
 	m.file.Add(function)
 
 	return nil
+}
+
+// hasSource reports whether field has a directive or a source field of its name.
+func (m *Generator) hasSource(f *GoFunction, field *GoField) bool {
+	if f.options[field.name] != nil {
+		return true
+	}
+
+	_, path, err := m.findField(f.inputs, field.name)
+
+	return err != nil || path != nil
 }
 
 // sourceIsPointer reports whether the source field a plain mapping of field would

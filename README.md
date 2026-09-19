@@ -559,6 +559,8 @@ err := m.CommitRow(commit, tx.CommitRow.Create()).SetRef(ref.Hash).SetSetID(setI
 
 A nil source leaves the builder untouched. Two ent conventions are recognised: `SetNillableX(*T)` is used instead of `SetX(T)` when the source field or the converter hands back a pointer, so nil never turns into a zero value; and where an edge has both `SetX(*Entity)` and `SetXID(id)`, the id form is the field unless a directive addresses `X`. Variadic adders such as `AddFileIDs(...)` are not fields. As with structs, a setter without a source is an error until it is ignored with `from:"-"`.
 
+Ent entities often have many optional columns a given source never carries. Rather than ignoring each of them, put `// mapper:skip-optional` on the method, or on the interface to cover all of its methods. An optional setter, one with a `SetNillableX` twin, that has neither a directive nor a source field of its name is then left unset. Required setters are still an error.
+
 ## Building and Running the Generator
 
 To build the `mapper` tool from source:

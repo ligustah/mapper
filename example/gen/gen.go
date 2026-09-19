@@ -27,6 +27,20 @@ func (m AdvancedMapperImpl) FillEvent(src *protos.EventProto, b *models.EventCre
 	return b
 }
 
+func (m AdvancedMapperImpl) FillEventSparse(src *protos.EventProto, b *models.EventCreate) *models.EventCreate {
+	if src == nil {
+		return b
+	}
+	b.SetAt(example.FromNanos(src.AtNs))
+	b.SetCustomerID(src.OwnerId)
+	b.SetID(src.ID)
+	b.SetLevel(int(src.Level))
+	b.SetNote(src.Note)
+	b.SetOwner(string(src.Owner))
+
+	return b
+}
+
 func (m AdvancedMapperImpl) MapArrayConvert(src *models.ArrayConvertExample) *protos.ArrayConvertExampleProto {
 	if src == nil {
 		return nil
@@ -154,18 +168,17 @@ func (m AdvancedMapperImpl) MapEvent(src *models.Event) *protos.EventProto {
 	}
 	var tmp0 int64
 	if tmp1 := src.RetiredAt; tmp1 != nil {
-		tmp2 := *tmp1
-		tmp0 = tmp2.UnixNano()
+		tmp0 = tmp1.UnixNano()
 	}
-	var tmp3 *timestamppb.Timestamp
-	if tmp4 := src.Deadline; tmp4 != nil {
-		tmp5 := *tmp4
-		tmp3 = timestamppb.New(tmp5)
+	var tmp2 *timestamppb.Timestamp
+	if tmp3 := src.Deadline; tmp3 != nil {
+		tmp4 := *tmp3
+		tmp2 = timestamppb.New(tmp4)
 	}
-	var tmp6 string
-	if tmp7 := src.Note; tmp7 != nil {
-		tmp8 := *tmp7
-		tmp6 = example.Upper(tmp8)
+	var tmp5 string
+	if tmp6 := src.Note; tmp6 != nil {
+		tmp7 := *tmp6
+		tmp5 = example.Upper(tmp7)
 	}
 
 	return &protos.EventProto{
@@ -175,8 +188,8 @@ func (m AdvancedMapperImpl) MapEvent(src *models.Event) *protos.EventProto {
 		OwnerId:     src.OwnerID,
 		Level:       protos.Level(src.Level),
 		RetiredAtNs: tmp0,
-		Deadline:    tmp3,
-		Note:        tmp6,
+		Deadline:    tmp2,
+		Note:        tmp5,
 	}
 }
 
