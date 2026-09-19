@@ -219,6 +219,79 @@ func TestLookupEnumConstant(t *testing.T) {
 	}
 }
 
+func TestEnumKey(t *testing.T) {
+	tests := []struct {
+		constName string
+		typeName  string
+		want      string
+	}{
+		{"StateActive", "State", "ACTIVE"},
+		{"SetState_SET_STATE_ACTIVE", "SetState", "ACTIVE"},
+		{"SetState_SET_STATE_UNSPECIFIED", "SetState", "UNSPECIFIED"},
+		{"Commit_ACTIVE", "Commit_State", "ACTIVE"},
+		{"Commit_STATE_ACTIVE", "Commit_State", "ACTIVE"},
+		{"VisibilityProtoPublic", "VisibilityProto", "PUBLIC"},
+		// a constant named exactly like its type keeps its name
+		{"State", "State", "STATE"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.constName, func(t *testing.T) {
+			if got := enumKey(tt.constName, tt.typeName); got != tt.want {
+				t.Errorf("enumKey(%q, %q) = %q, want %q", tt.constName, tt.typeName, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestMatchEnumConstants covers pairing an ent style string enum with a protoc
+// style numbered one: by name, by string value, and nothing for a constant without
+// a unique counterpart.
+func TestMatchEnumConstants(t *testing.T) {
+	state := enumType("example.com/ent/set", "State", types.Typ[types.String],
+		constDef{"StateActive", str("active")},
+		constDef{"StateClosing", str("closing")},
+		// matched by its value alone
+		constDef{"StateGone", str("deleted")},
+		constDef{"StateLost", str("lost")},
+	)
+	pbState := enumType("example.com/pb", "SetState", types.Typ[types.Int32],
+		constDef{"SetState_SET_STATE_UNSPECIFIED", num(0)},
+		constDef{"SetState_SET_STATE_ACTIVE", num(1)},
+		constDef{"SetState_SET_STATE_CLOSING", num(2)},
+		constDef{"SetState_SET_STATE_DELETED", num(3)},
+	)
+
+	pairs, unmatched := matchEnumConstants(state, pbState)
+
+	got := map[string]string{}
+	for _, p := range pairs {
+		got[p.from.name] = p.to.name
+	}
+
+	want := map[string]string{
+		"StateActive":  "SetState_SET_STATE_ACTIVE",
+		"StateClosing": "SetState_SET_STATE_CLOSING",
+		"StateGone":    "SetState_SET_STATE_DELETED",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("matchEnumConstants() pairs = %v, want %v", got, want)
+	}
+	for from, to := range want {
+		if got[from] != to {
+			t.Errorf("%s maps onto %q, want %q", from, got[from], to)
+		}
+	}
+
+	if len(unmatched) != 1 || unmatched[0] != "StateLost" {
+		t.Errorf("unmatched = %v, want [StateLost]", unmatched)
+	}
+
+	if pairs, _ := matchEnumConstants(state, types.Typ[types.Int32]); pairs != nil {
+		t.Errorf("a type without constants should match nothing, got %v", pairs)
+	}
+}
+
 func TestNormalizeEnumName(t *testing.T) {
 	tests := []struct {
 		constName string

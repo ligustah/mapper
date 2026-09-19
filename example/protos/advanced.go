@@ -103,6 +103,40 @@ type OptionalExampleProto struct {
 	Item   *ItemProto
 }
 
+// TaskPhase is numbered and named the way protoc names an enum's values
+type TaskPhase int32
+
+const (
+	TaskPhase_TASK_PHASE_UNSPECIFIED TaskPhase = 0
+	TaskPhase_TASK_PHASE_RUNNING     TaskPhase = 1
+	TaskPhase_TASK_PHASE_DONE        TaskPhase = 2
+)
+
+// TaskPhase_name and TaskPhase_value are the lookup tables protoc emits for an enum
+var (
+	TaskPhase_name = map[int32]string{
+		0: "TASK_PHASE_UNSPECIFIED",
+		1: "TASK_PHASE_RUNNING",
+		2: "TASK_PHASE_DONE",
+	}
+	TaskPhase_value = map[string]int32{
+		"TASK_PHASE_UNSPECIFIED": 0,
+		"TASK_PHASE_RUNNING":     1,
+		"TASK_PHASE_DONE":        2,
+	}
+)
+
+// Enum is the method protoc generates, which marks the type as a protobuf enum
+func (x TaskPhase) Enum() *TaskPhase {
+	return &x
+}
+
+// TaskProto demonstrates a numbered enum mapped onto a string one
+type TaskProto struct {
+	ID    string
+	Phase TaskPhase
+}
+
 // OrderProto flattens a field reached through an edge
 type OrderProto struct {
 	ID           string

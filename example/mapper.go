@@ -84,6 +84,17 @@ type AdvancedMapper interface {
 	// field:Visibility map:"VisibilityProtoUnspecified=VisibilityUnspecified,VisibilityProtoPublic=public,VisibilityProtoPrivate=private"
 	MapEnumExampleReverse(src *protos.EnumExampleProto) (*models.EnumExample, error)
 
+	// Phase needs no map: either. The two enums differ in their underlying types, so
+	// no conversion exists, but their constants pair up by name once the type name
+	// is stripped: PhaseRunning and TaskPhase_TASK_PHASE_RUNNING are both RUNNING.
+	// The generated switch keeps an error branch, so the method returns an error.
+	MapTask(src *models.Task) (*protos.TaskProto, error)
+
+	// In this direction TASK_PHASE_UNSPECIFIED has no counterpart. Generation warns
+	// about it, or fails under -strict-enums, and at runtime it reaches the error
+	// branch.
+	MapTaskReverse(src *protos.TaskProto) (*models.Task, error)
+
 	MapItem(item *models.Item) *protos.ItemProto
 
 	// Items is []*models.Item on one side and []*protos.ItemProto on the other, the

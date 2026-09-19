@@ -396,7 +396,7 @@ func (m *Generator) buildEnumMapping(f *GoFunction, field *GoField, directive st
 
 	m.checkEnumMapCoverage(srcElem, dstElem, covered)
 
-	gen := enumSwitchMapping(dstElem, field.name, cases)
+	gen := enumSwitchMapping(dstElem, "field "+field.name, cases)
 
 	switch {
 	case srcType.Kind == PointerKind && dstType.Kind == PointerKind:
@@ -461,15 +461,50 @@ func (m *Generator) checkEnumMapCoverage(from, to *GoType, covered map[string]bo
 		return
 	}
 
-	message := fmt.Sprintf("enum mismatch converting %s to %s: not listed in map: %s",
-		from, to, strings.Join(uncovered, ", "))
+	m.enumProblem(fmt.Sprintf("enum mismatch converting %s to %s: not listed in map: %s",
+		from, to, strings.Join(uncovered, ", ")))
+}
 
+// enumProblem logs a problem with an enum mapping, and in strict mode also collects
+// it so that generation fails once the interface is done.
+func (m *Generator) enumProblem(message string) {
 	if m.strictEnums {
 		m.enumProblems = append(m.enumProblems, message)
 		return
 	}
 
 	log.Printf("warning: %s", message)
+}
+
+// enumNameMapping derives a switch between two enum types whose underlying types
+// differ, a string enum onto a numbered one for instance, by pairing their
+// constants by name. It returns nil unless both declare constants and at least one
+// pair matches. Source constants without a counterpart are reported like the ones
+// a `map:` directive leaves out, and reach the switch's error branch at runtime.
+func (m *Generator) enumNameMapping(pair TypePair) GeneratorFunc {
+	matched, unmatched := matchEnumConstants(pair.from.Raw, pair.to.Raw)
+	if len(matched) == 0 {
+		return nil
+	}
+
+	cases := make([]enumSwitchCase, 0, len(matched))
+	for _, p := range matched {
+		cases = append(cases, enumSwitchCase{
+			from: jen.Qual(pair.from.Pkg, p.from.name),
+			to:   jen.Qual(pair.to.Pkg, p.to.name),
+		})
+	}
+
+	key := "names:" + pair.String()
+	if len(unmatched) > 0 && !m.checkedEnumPairs[key] {
+		m.checkedEnumPairs[key] = true
+		m.enumProblem(fmt.Sprintf("enum mismatch converting %s to %s: no counterpart by name for %s",
+			pair.from, pair.to, strings.Join(unmatched, ", ")))
+	}
+
+	log.Printf("converting %s to %s by matching %d enum constants by name", pair.from, pair.to, len(matched))
+
+	return enumSwitchMapping(pair.to, pair.to.Name, cases)
 }
 
 // elementType unwraps a pointer or slice to the type the switch runs on.
@@ -859,6 +894,10 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 		log.Printf("converting %s to %s using a direct type conversion", pair.from.String(), pair.to.String())
 		m.checkEnums(pair)
 		return convertMapping(pair.to), false
+	}
+
+	if gen := m.enumNameMapping(pair); gen != nil {
+		return gen, true
 	}
 
 	// if we have no direct match, see if the potential element types can be matched
@@ -1271,8 +1310,9 @@ type enumSwitchCase struct {
 }
 
 // enumSwitchMapping emits a switch over the input that assigns the mapped value for
-// every listed case, and returns an error for anything else.
-func enumSwitchMapping(target *GoType, fieldName string, cases []enumSwitchCase) GeneratorFunc {
+// every listed case, and returns an error for anything else. label names what is
+// being mapped in that error, e.g. `field Visibility`.
+func enumSwitchMapping(target *GoType, label string, cases []enumSwitchCase) GeneratorFunc {
 	return func(ctx *FunctionContext, input jen.Code) jen.Code {
 		tmp := ctx.tmpVar()
 
@@ -1283,7 +1323,7 @@ func enumSwitchMapping(target *GoType, fieldName string, cases []enumSwitchCase)
 				group.Case(c.from).Block(jen.Id(tmp).Op("=").Add(c.to))
 			}
 
-			fmtString := jen.Lit(fmt.Sprintf("unmapped value for field %s: %%v", fieldName))
+			fmtString := jen.Lit(fmt.Sprintf("unmapped value for %s: %%v", label))
 			group.Default().Block(
 				jen.Return(ctx.targetType.zero(), jen.Qual("fmt", "Errorf").Call(fmtString, input)),
 			)

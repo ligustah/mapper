@@ -219,6 +219,105 @@ func enumConstantNames(typ types.Type) []string {
 	return names
 }
 
+// enumKey reduces a constant to the word that names its value, for matching the
+// constants of two enums that spell their names differently. Case and underscores
+// are ignored, and the type name is stripped as often as it leads, along with the
+// outer message of a nested protoc enum. ent's StateActive of type State, protoc's
+// SetState_SET_STATE_ACTIVE of type SetState and Commit_ACTIVE of type Commit_State
+// all come down to ACTIVE.
+func enumKey(constName, typeName string) string {
+	key := squashName(constName)
+
+	prefixes := []string{squashName(typeName)}
+	if i := strings.LastIndex(typeName, "_"); i > 0 {
+		prefixes = append(prefixes, squashName(typeName[:i]))
+	}
+
+	for stripped := true; stripped; {
+		stripped = false
+		for _, prefix := range prefixes {
+			if prefix != "" && len(key) > len(prefix) && strings.HasPrefix(key, prefix) {
+				key = key[len(prefix):]
+				stripped = true
+			}
+		}
+	}
+
+	return key
+}
+
+func squashName(name string) string {
+	return strings.ToUpper(strings.ReplaceAll(name, "_", ""))
+}
+
+// enumPair is a source constant and the target constant it maps onto.
+type enumPair struct {
+	from enumConstant
+	to   enumConstant
+}
+
+// matchEnumConstants pairs the constants of two enum types by name, see enumKey. A
+// string constant is also matched by its value, so ent's StateActive = "active"
+// finds ACTIVE either way. A source constant with no counterpart, or with more than
+// one, is returned in unmatched. Both are nil when either type declares no
+// constants.
+func matchEnumConstants(from, to types.Type) (pairs []enumPair, unmatched []string) {
+	fromConsts, toConsts := enumConstants(from), enumConstants(to)
+	if len(fromConsts) == 0 || len(toConsts) == 0 {
+		return nil, nil
+	}
+
+	fromName, toName := typeObjName(from), typeObjName(to)
+
+	byKey := map[string][]enumConstant{}
+	for _, c := range toConsts {
+		for _, key := range enumKeys(c, toName) {
+			byKey[key] = appendConstant(byKey[key], c)
+		}
+	}
+
+	for _, c := range fromConsts {
+		var candidates []enumConstant
+		for _, key := range enumKeys(c, fromName) {
+			for _, target := range byKey[key] {
+				candidates = appendConstant(candidates, target)
+			}
+		}
+
+		if len(candidates) != 1 {
+			unmatched = append(unmatched, c.name)
+			continue
+		}
+
+		pairs = append(pairs, enumPair{from: c, to: candidates[0]})
+	}
+
+	return pairs, unmatched
+}
+
+// enumKeys are the keys a constant is matched by: its name and, for a string
+// constant, its value.
+func enumKeys(c enumConstant, typeName string) []string {
+	keys := []string{enumKey(c.name, typeName)}
+	if c.value.Kind() == constant.String {
+		if value := squashName(constant.StringVal(c.value)); value != "" && value != keys[0] {
+			keys = append(keys, value)
+		}
+	}
+
+	return keys
+}
+
+func appendConstant(consts []enumConstant, c enumConstant) []enumConstant {
+	for _, existing := range consts {
+		if existing.name == c.name {
+			return consts
+		}
+	}
+
+	return append(consts, c)
+}
+
 // typeObjName returns the declared name of a named type, or an empty string.
 func typeObjName(typ types.Type) string {
 	named, ok := typ.(*types.Named)

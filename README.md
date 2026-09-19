@@ -393,6 +393,8 @@ The `mapper` tool automatically discovers and handles Protocol Buffer enums when
 
 *(Note: Specific examples for Protobuf enum handling would require defining `.proto` files and generated Go code, which is beyond a simple example here. The tool integrates with `go/types` to recognize these enums.)*
 
+An enum on the other side, such as the string enums ent generates, is mapped onto a Protobuf enum without annotation when their constants pair up by name. Case, underscores and the type name are ignored in the comparison, so `StateActive = "active"` of type `State` meets `SetState_SET_STATE_ACTIVE` of type `SetState` as `ACTIVE`. A string constant also matches by its value. The generated code is a switch with an error branch for values without a counterpart, so the method has to return an error. Constants that find no counterpart, like the usual `..._UNSPECIFIED`, are reported as a warning, or as an error with `-strict-enums`. Where names do not line up, spell the pairs out with a `map:` directive.
+
 ### 8. Indirect Type Mapping via Type Graph
 
 A powerful feature of the `mapper` tool is its ability to find indirect mapping routes between types. Instead of requiring a direct conversion function for every possible type pair, the `mapper` constructs a graph of all available type conversions (both direct and those defined by your mapping interfaces).

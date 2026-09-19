@@ -186,6 +186,14 @@ other enum problems: a warning, or an error under `-strict-enums`.
 
 Works on plain fields, on `*T` → `*U` (nil stays nil) and on `[]T` → `[]U`.
 
+Two enums whose underlying types differ need no `map:` either when their constants
+pair up by name. Case and underscores are ignored and the type name is stripped, so
+ent's `set.StateActive = "active"` and protoc's `SetState_SET_STATE_ACTIVE` are both
+`ACTIVE`. A string constant also matches by its value. The generator then emits the
+same switch a `map:` directive would, error branch included. Source constants with
+no counterpart, or with more than one, are reported like constants a `map:` leaves
+out, and a directive still takes over wherever the names do not line up.
+
 ## Custom Mappers
 
 To extend with custom type conversions:

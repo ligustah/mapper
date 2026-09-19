@@ -441,6 +441,36 @@ func TestAdvancedMapper_FillEventSparse(t *testing.T) {
 	}
 }
 
+// TestAdvancedMapper_MapTask covers enums paired by constant name across differing
+// underlying types, in both directions
+func TestAdvancedMapper_MapTask(t *testing.T) {
+	m := AdvancedMapperImpl{}
+
+	proto, err := m.MapTask(&models.Task{ID: "t-1", Phase: models.PhaseDone})
+	if err != nil {
+		t.Fatalf("MapTask() error = %v", err)
+	}
+	if proto.Phase != protos.TaskPhase_TASK_PHASE_DONE {
+		t.Errorf("Phase mismatch: got %v, want %v", proto.Phase, protos.TaskPhase_TASK_PHASE_DONE)
+	}
+
+	if _, err := m.MapTask(&models.Task{Phase: "paused"}); err == nil {
+		t.Error("MapTask should reject a value Phase does not declare")
+	}
+
+	model, err := m.MapTaskReverse(&protos.TaskProto{ID: "t-2", Phase: protos.TaskPhase_TASK_PHASE_RUNNING})
+	if err != nil {
+		t.Fatalf("MapTaskReverse() error = %v", err)
+	}
+	if model.Phase != models.PhaseRunning {
+		t.Errorf("Phase mismatch: got %v, want %v", model.Phase, models.PhaseRunning)
+	}
+
+	if _, err := m.MapTaskReverse(&protos.TaskProto{Phase: protos.TaskPhase_TASK_PHASE_UNSPECIFIED}); err == nil {
+		t.Error("MapTaskReverse should reject a value without a counterpart")
+	}
+}
+
 // TestAdvancedMapper_MapArrayConvert covers a fixed-size array whose elements need
 // a conversion, so the array is rebuilt element by element
 func TestAdvancedMapper_MapArrayConvert(t *testing.T) {

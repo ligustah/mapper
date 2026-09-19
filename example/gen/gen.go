@@ -301,6 +301,46 @@ func (m AdvancedMapperImpl) MapSnapshotExample(src *models.SnapshotExample) *pro
 	}
 }
 
+func (m AdvancedMapperImpl) MapTask(src *models.Task) (*protos.TaskProto, error) {
+	if src == nil {
+		return nil, nil
+	}
+	var tmp0 protos.TaskPhase
+	switch src.Phase {
+	case models.PhaseDone:
+		tmp0 = protos.TaskPhase_TASK_PHASE_DONE
+	case models.PhaseRunning:
+		tmp0 = protos.TaskPhase_TASK_PHASE_RUNNING
+	default:
+		return nil, fmt.Errorf("unmapped value for TaskPhase: %v", src.Phase)
+	}
+
+	return &protos.TaskProto{
+		ID:    src.ID,
+		Phase: tmp0,
+	}, nil
+}
+
+func (m AdvancedMapperImpl) MapTaskReverse(src *protos.TaskProto) (*models.Task, error) {
+	if src == nil {
+		return nil, nil
+	}
+	var tmp0 models.Phase
+	switch src.Phase {
+	case protos.TaskPhase_TASK_PHASE_DONE:
+		tmp0 = models.PhaseDone
+	case protos.TaskPhase_TASK_PHASE_RUNNING:
+		tmp0 = models.PhaseRunning
+	default:
+		return nil, fmt.Errorf("unmapped value for Phase: %v", src.Phase)
+	}
+
+	return &models.Task{
+		ID:    src.ID,
+		Phase: tmp0,
+	}, nil
+}
+
 func (m AdvancedMapperImpl) MapUser(user *models.User) *protos.UserProto {
 	if user == nil {
 		return nil

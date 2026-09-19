@@ -118,6 +118,31 @@ type OptionalExample struct {
 	Item   *Item
 }
 
+// Phase is a string enum shaped like the ones ent generates, with its values under
+// the type name and a validator next to them
+type Phase string
+
+const (
+	PhaseRunning Phase = "running"
+	PhaseDone    Phase = "done"
+)
+
+// PhaseValidator reports a value Phase does not declare
+func PhaseValidator(p Phase) error {
+	switch p {
+	case PhaseRunning, PhaseDone:
+		return nil
+	default:
+		return errors.New("invalid phase " + string(p))
+	}
+}
+
+// Task demonstrates a string enum mapped onto a numbered one
+type Task struct {
+	ID    string
+	Phase Phase
+}
+
 // Customer is the far side of an edge
 type Customer struct {
 	Name string
