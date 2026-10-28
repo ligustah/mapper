@@ -313,7 +313,58 @@ func matchEnumConstants(from, to types.Type) (pairs []enumPair, unmatched []stri
 		pairs = append(pairs, enumPair{from: c, to: candidates[0]})
 	}
 
-	return pairs, unmatched
+	nameKeys := func(c enumConstant, typeName, prefix string) []string {
+		return []string{enumKey(c.name, typeName), shortKey(c, prefix)}
+	}
+	byName := func(p enumPair) bool {
+		for _, a := range nameKeys(p.from, fromName, fromPrefix) {
+			for _, b := range nameKeys(p.to, toName, toPrefix) {
+				if a != "" && a == b {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	return dedupeAliases(pairs, unmatched, fromConsts, byName)
+}
+
+// dedupeAliases keeps one pair per source value, so that a switch never repeats a
+// case: ent declares DefaultState = StateActive next to StateActive itself. The
+// pair whose names match wins over one paired by value alone. A constant left
+// unmatched is no problem either once another constant of its value is paired.
+func dedupeAliases(pairs []enumPair, unmatched []string, fromConsts []enumConstant, byName func(enumPair) bool) ([]enumPair, []string) {
+	byValue := map[string]int{}
+	var out []enumPair
+	for _, p := range pairs {
+		value := p.from.value.ExactString()
+		i, seen := byValue[value]
+		if !seen {
+			byValue[value] = len(out)
+			out = append(out, p)
+			continue
+		}
+
+		if byName(p) && !byName(out[i]) {
+			out[i] = p
+		}
+	}
+
+	var left []string
+	for _, name := range unmatched {
+		covered := false
+		for _, c := range fromConsts {
+			if c.name == name {
+				_, covered = byValue[c.value.ExactString()]
+			}
+		}
+		if !covered {
+			left = append(left, name)
+		}
+	}
+
+	return out, left
 }
 
 func lookupCandidates(byKey map[string][]enumConstant, keys []string) []enumConstant {

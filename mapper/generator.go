@@ -586,15 +586,23 @@ func (m *Generator) resolveEnumRef(typ *GoType, ref string, side string) (jen.Co
 // The generated switch handles them through its error branch, so this is about
 // noticing a value that was forgotten rather than deliberately left out.
 func (m *Generator) checkEnumMapCoverage(from, to *GoType, covered map[string]bool) {
-	names := enumConstantNames(from.Raw)
-	if len(names) == 0 {
+	consts := enumConstants(from.Raw)
+	if len(consts) == 0 {
 		return
 	}
 
+	// an alias of a listed constant, ent's DefaultX, is covered along with it
+	coveredValues := map[string]bool{}
+	for _, c := range consts {
+		if covered[c.name] {
+			coveredValues[c.value.ExactString()] = true
+		}
+	}
+
 	var uncovered []string
-	for _, name := range names {
-		if !covered[name] {
-			uncovered = append(uncovered, name)
+	for _, c := range consts {
+		if !coveredValues[c.value.ExactString()] {
+			uncovered = append(uncovered, c.name)
 		}
 	}
 
@@ -731,13 +739,20 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 		inputExpr = jen.Id(param.name).Op(".").Add(inputPath.id())
 	}
 
-	// a slice that does not declare the method itself has it called on every element
-	sliced := srcType.Kind == SliceKind && field.typ.Kind == SliceKind && findMethod(srcType, methodName) == nil
+	// a slice or map that does not declare the method itself has it called on every
+	// element or value
+	own := findMethod(srcType, methodName) != nil
+	sliced := !own && srcType.Kind == SliceKind && field.typ.Kind == SliceKind
+	mapped := !own && srcType.Kind == MapKind && field.typ.Kind == MapKind &&
+		types.AssignableTo(srcType.Key.Raw, field.typ.Key.Raw)
 
 	// dereference pointers to find the method
 	elemType := srcType
-	if sliced {
+	switch {
+	case sliced:
 		elemType = srcType.Element
+	case mapped:
+		elemType = srcType.Value
 	}
 	if elemType.Kind == PointerKind {
 		elemType = elemType.Element
@@ -784,6 +799,9 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 	case sliced:
 		elemGen, _ := liftMethodCall(srcType.Element, field.typ.Element, resultGoType, gen)
 		gen, produces = sliceMapping(field.typ.Element, elemGen), field.typ
+	case mapped:
+		valueGen, _ := liftMethodCall(srcType.Value, field.typ.Value, resultGoType, gen)
+		gen, produces = mapMapping(field.typ.Key, field.typ.Value, identityMapping, valueGen), field.typ
 	default:
 		gen, produces = liftMethodCall(srcType, field.typ, resultGoType, gen)
 	}
@@ -816,7 +834,11 @@ func liftCall(src, dst, input, result *GoType, gen GeneratorFunc) (GeneratorFunc
 		return gen, result
 	}
 
-	if dst.Kind == PointerKind {
+	switch {
+	case dst.Kind == PointerKind && result.Kind == PointerKind:
+		// the pointer handed back is kept, not re-addressed
+		return mapPointerThrough(result.Element, gen), result
+	case dst.Kind == PointerKind:
 		return mapPointerToPointer(dst.Element, gen), result.pointer()
 	}
 
@@ -828,6 +850,8 @@ func liftCall(src, dst, input, result *GoType, gen GeneratorFunc) (GeneratorFunc
 // nil for a pointer target. It returns the generator and the type it produces.
 func liftMethodCall(src, dst, result *GoType, gen GeneratorFunc) (GeneratorFunc, *GoType) {
 	switch {
+	case src.Kind == PointerKind && dst.Kind == PointerKind && result.Kind == PointerKind:
+		return derefGuard(result.ref(), gen, false, false), result
 	case src.Kind == PointerKind && dst.Kind == PointerKind:
 		return derefGuard(jen.Op("*").Add(result.ref()), gen, true, false), result.pointer()
 	case src.Kind == PointerKind:
@@ -1090,6 +1114,13 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 			mappers[len(mappers)-1].types.to.String() == pair.to.String() {
 			gen, canFail := compose(TypePair{from: from.Element, to: pair.to}, mappers)
 			return mapPointerThrough(to.Element, gen), canFail
+		}
+
+		// a value that may not be copied is not dereferenced to map it as a value
+		if hasLock(from.Element.Raw) || hasLock(to.Element.Raw) {
+			if gen, canFail := m.deriveConversion(from, to); gen != nil {
+				return gen, canFail
+			}
 		}
 
 		gen, canFail := m.buildGenerator(from.Element, to.Element)
@@ -1434,6 +1465,13 @@ func derefGuard(outType jen.Code, gen GeneratorFunc, takeAddress, deref bool) Ge
 
 func mapFromPointer(gen GeneratorFunc, typ *GoType) GeneratorFunc {
 	return func(ctx *FunctionContext, input jen.Code) jen.Code {
+		// a call is made once, not once for the nil check and again to dereference
+		if strings.Contains(jen.Null().Add(input).GoString(), "(") {
+			ptrVar := ctx.tmpVar()
+			ctx.add(jen.Id(ptrVar).Op(":=").Add(input).Line())
+			input = jen.Id(ptrVar)
+		}
+
 		tmpVar := ctx.tmpVar()
 
 		ctx.add(jen.Var().Id(tmpVar).Add(typ.ref()).Line())

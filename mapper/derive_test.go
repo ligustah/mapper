@@ -1,6 +1,9 @@
 package mapper
 
-import "testing"
+import (
+	"os/exec"
+	"testing"
+)
 
 func TestDeriveStruct(t *testing.T) {
 	out := mustGenerate(t, "derive")
@@ -24,4 +27,20 @@ func TestDeriveStruct(t *testing.T) {
 	// out of reach
 	assertContains(t, method(t, out, "ToHolder"), "m.mapGoalToGoalProto(in.Goals[i])")
 	assertContains(t, out, "func (m OtherImpl) mapGoalToGoalProto(in derive.Goal) derive.GoalProto {")
+}
+
+// TestDeriveNoCopy covers structs go vet won't let be copied, protobuf messages:
+// their helpers take and return pointers, and nothing dereferences one.
+func TestDeriveNoCopy(t *testing.T) {
+	out := mustGenerate(t, "nocopy")
+
+	assertContains(t, out,
+		"func (m MapperImpl) mapBracketToStoreBracket(in *nocopy.Bracket) *nocopy.StoreBracket {",
+		"func (m MapperImpl) mapStoreBracketToBracket(in *nocopy.StoreBracket) *nocopy.Bracket {",
+	)
+
+	vet := exec.Command("go", "vet", "./testdata/nocopy/gen")
+	if output, err := vet.CombinedOutput(); err != nil {
+		t.Errorf("go vet on the generated code: %v\n%s\n%s", err, output, out)
+	}
 }

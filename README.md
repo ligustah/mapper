@@ -252,7 +252,7 @@ func (m *IgnoringMapperImpl) MapIgnoredData(source *SourceIgnoredData) *TargetIg
 }
 ```
 
-A target with many fields the source does not carry, ent's `Edges` or an ID the database assigns, can drop them all at once. Put `// mapper:skip-unmatched` on the method, or on the interface to cover all of its methods. A field or builder setter with neither a directive nor a source field of its name is then left unset, rather than reported. A field whose source exists but cannot be converted, and a directive naming a source that does not exist, still fail.
+A target with many fields the source does not carry, ent's `Edges` or an ID the database assigns, can drop them all at once. Put `// mapper:skip-unmatched` on the method, or on the interface to cover all of its methods. A field or builder setter with neither a directive nor a source field of its name is then left unset, rather than reported. A field whose source exists but cannot be converted, and a directive naming a source that does not exist, still fail. Keep a `from:"-"` for a field that does have a source of its name but must stay unset, the toggle would map it.
 
 ```go
 // mapper:generate
@@ -581,7 +581,7 @@ A function of an element type applies to each element: with `func Hex(int) strin
 
 #### Calling a method (`method` tag)
 
-`// field:Body method:"Decode"` calls a no-argument method on the source field, `Decode()` here. The method may return `(T, error)`, in which case the mapping method needs an error return. A pointer source is nil-checked first, a slice has the method called on every element, and `from:"."` calls it on the input itself:
+`// field:Body method:"Decode"` calls a no-argument method on the source field, `Decode()` here. The method may return `(T, error)`, in which case the mapping method needs an error return. A pointer source is nil-checked first, a slice or map has the method called on every element or value, and `from:"."` calls it on the input itself:
 
 ```go
 // field:Passed from:"." method:"Passed"

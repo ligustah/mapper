@@ -108,7 +108,10 @@ generated once per interface and then used like any converter: for a nested fiel
 rules as a declared method and the interface's own toggles, it takes no directives;
 a pair whose fields do not line up still needs a declared method. It returns an
 error when one of its fields can fail. A struct that refers to itself, a tree, calls
-its own helper. Derivation only fills in where the generator would otherwise have
+its own helper. A struct go vet won't let be copied, one holding a lock as every
+protobuf message does through its `[0]sync.Mutex`, gets a helper over pointers
+instead, `mapBracketToStoreBracket(in *Bracket) *StoreBracket`, so it is never
+dereferenced. Derivation only fills in where the generator would otherwise have
 failed: a declared method, a registered converter or a direct conversion always
 wins, and the fallback that converts a whole input into a field without a source
 never takes a struct apart, only an explicit `from:"."` does.
@@ -160,6 +163,8 @@ By default every target field needs a source or a directive. `// mapper:skip-unm
 on a method or on the whole interface, leaves any field or builder setter without
 either unset instead, struct targets and builders alike. A field whose source exists
 but cannot be converted, and a directive pointing at a missing source, still fail.
+Dropping a `from:"-"` under the toggle is not neutral: a field excluded on purpose
+that has a source of its name is mapped again.
 Toggles are parsed by `applyToggle` in `parser.go`, a new one goes there.
 
 `// mapper:inline Report Host`, on a method or the interface, flattens sub-structs:
@@ -202,12 +207,13 @@ In method doc comments:
 - `// field:TargetField using:"alias.CustomFunc"` - An import of the interface's file, by its local name
 - `// field:TargetField method:"MethodName"` - Call a no-argument method on the source value,
   which may return `(T, error)`; with `from:"."` it is called on the input itself
+- `// field:TargetField map:"a=X,b=Y"` - Map listed values explicitly (see below)
 
 A `using:` function or `method:` of the element type is applied to every element when
-the source and target are both slices (or, for `using:`, both maps with assignable
-keys) and the collection itself does not fit: `[]int` → `[]string` with
-`using:"Hex"` for a `func Hex(int) string`.
-- `// field:TargetField map:"a=X,b=Y"` - Map listed values explicitly (see below)
+the source and target are both slices, or to every value when both are maps with
+assignable keys, and the collection itself does not fit: `[]int` → `[]string` with
+`using:"Hex"` for a `func Hex(int) string`. A result that is a pointer already is
+kept as it is for a `*T` → `*U` field, not addressed a second time.
 
 ### Enum Mapping
 
@@ -244,8 +250,10 @@ ent's `set.StateActive = "active"` and protoc's `SetState_SET_STATE_ACTIVE` are 
 `ACTIVE`. A string constant also matches by its value. A constant still without a
 counterpart is tried once more with the underscore-terminated prefix all constants
 of its type share cut off, which pairs `SetState_SET_ACTIVE` with `StateActive`;
-this second pass never undoes a pair the first one found. The generator then emits the
-same switch a `map:` directive would, error branch included. Source constants with
+this second pass never undoes a pair the first one found. Two source constants of
+one value, ent's `DefaultState = StateActive`, become a single case, the one whose
+name matches. The generator then emits the same switch a `map:` directive would,
+error branch included. Source constants with
 no counterpart, or with more than one, are reported like constants a `map:` leaves
 out, and a directive still takes over wherever the names do not line up.
 

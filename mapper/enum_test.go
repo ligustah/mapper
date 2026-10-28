@@ -316,6 +316,17 @@ func TestMatchEnumConstants(t *testing.T) {
 		t.Errorf("matchEnumConstants() with a shared prefix = %v, unmatched %v", got, unmatched)
 	}
 
+	// ent's DefaultState repeats StateActive's value, a second case would not compile
+	withDefault := enumType("example.com/ent/set2", "State", types.Typ[types.String],
+		constDef{"DefaultState", str("active")},
+		constDef{"StateActive", str("active")},
+		constDef{"StateClosing", str("closing")},
+	)
+	pairs, unmatched = matchEnumConstants(withDefault, shortState)
+	if len(pairs) != 2 || pairs[0].from.name != "StateActive" || pairs[1].from.name != "StateClosing" || len(unmatched) != 0 {
+		t.Errorf("matchEnumConstants() with an alias = %v, unmatched %v", pairs, unmatched)
+	}
+
 	if pairs, _ := matchEnumConstants(state, types.Typ[types.Int32]); pairs != nil {
 		t.Errorf("a type without constants should match nothing, got %v", pairs)
 	}
