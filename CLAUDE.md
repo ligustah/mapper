@@ -194,12 +194,21 @@ branch returning an error — a mapped field therefore requires the method to re
 `error`. Source constants missing from the directive are reported the same way as
 other enum problems: a warning, or an error under `-strict-enums`.
 
+A `*=X` entry makes the default branch yield `X` instead, the field can then no
+longer fail and unlisted constants are not reported. With `*` as the only entry the
+pairs come from matching constant names, as below. Literals may be strings,
+integers or `true`/`false`, so an enum maps onto a plain string or bool too:
+`map:"KindFile=file,KindDir=dir,*=unknown"`.
+
 Works on plain fields, on `*T` → `*U` (nil stays nil) and on `[]T` → `[]U`.
 
 Two enums whose underlying types differ need no `map:` either when their constants
 pair up by name. Case and underscores are ignored and the type name is stripped, so
 ent's `set.StateActive = "active"` and protoc's `SetState_SET_STATE_ACTIVE` are both
-`ACTIVE`. A string constant also matches by its value. The generator then emits the
+`ACTIVE`. A string constant also matches by its value. A constant still without a
+counterpart is tried once more with the underscore-terminated prefix all constants
+of its type share cut off, which pairs `SetState_SET_ACTIVE` with `StateActive`;
+this second pass never undoes a pair the first one found. The generator then emits the
 same switch a `map:` directive would, error branch included. Source constants with
 no counterpart, or with more than one, are reported like constants a `map:` leaves
 out, and a directive still takes over wherever the names do not line up.

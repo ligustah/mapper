@@ -348,9 +348,11 @@ func (m *Generator) resolveField(f *GoFunction, field *GoField) (*ResolvedMappin
 //
 // Go enums are not closed types, a value outside the declared constants is always
 // representable, so the switch keeps a default branch that returns an error. That
-// makes the mapping fallible and the method therefore has to return an error.
+// makes the mapping fallible and the method therefore has to return an error. A
+// `*=X` entry turns the default branch into X instead, and when it is the only
+// entry the pairs are matched by constant name.
 func (m *Generator) buildEnumMapping(f *GoFunction, field *GoField, directive string) (*ResolvedMapping, error) {
-	entries, err := parseEnumMap(directive)
+	entries, fallbackRef, err := parseEnumMap(directive)
 	if err != nil {
 		return nil, fmt.Errorf("map: %w", err)
 	}
@@ -400,9 +402,32 @@ func (m *Generator) buildEnumMapping(f *GoFunction, field *GoField, directive st
 		cases = append(cases, enumSwitchCase{from: fromCode, to: toCode})
 	}
 
-	m.checkEnumMapCoverage(srcElem, dstElem, covered)
+	var fallback jen.Code
+	if fallbackRef != "" {
+		if fallback, _, err = m.resolveEnumRef(dstElem, fallbackRef, "target"); err != nil {
+			return nil, err
+		}
+	}
 
-	gen := enumSwitchMapping(dstElem, "field "+field.name, cases)
+	if len(entries) == 0 {
+		matched, _ := matchEnumConstants(srcElem.Raw, dstElem.Raw)
+		if len(matched) == 0 {
+			return nil, fmt.Errorf("map: no constants of %s and %s pair up by name, list them", srcElem, dstElem)
+		}
+
+		for _, p := range matched {
+			cases = append(cases, enumSwitchCase{
+				from: jen.Qual(srcElem.Pkg, p.from.name),
+				to:   jen.Qual(dstElem.Pkg, p.to.name),
+			})
+		}
+	}
+
+	if fallback == nil {
+		m.checkEnumMapCoverage(srcElem, dstElem, covered)
+	}
+
+	gen := enumSwitchMapping(dstElem, "field "+field.name, cases, fallback)
 
 	switch {
 	case srcType.Kind == PointerKind && dstType.Kind == PointerKind:
@@ -414,13 +439,13 @@ func (m *Generator) buildEnumMapping(f *GoFunction, field *GoField, directive st
 		return nil, fmt.Errorf("map: cannot map %s to %s, both sides need to be values, pointers or slices", srcType, dstType)
 	}
 
-	gen, _ = guardPath(f, param, inputField, gen)
+	gen, guardFails := guardPath(f, param, inputField, gen)
 
 	return &ResolvedMapping{
 		output:    field,
 		input:     jen.Id(param.name).Op(".").Add(inputField.id()),
 		generator: gen,
-		canFail:   true,
+		canFail:   fallback == nil || guardFails,
 	}, nil
 }
 
@@ -510,7 +535,7 @@ func (m *Generator) enumNameMapping(pair TypePair) GeneratorFunc {
 
 	log.Printf("converting %s to %s by matching %d enum constants by name", pair.from, pair.to, len(matched))
 
-	return enumSwitchMapping(pair.to, pair.to.Name, cases)
+	return enumSwitchMapping(pair.to, pair.to.Name, cases, nil)
 }
 
 // elementType unwraps a pointer or slice to the type the switch runs on.
@@ -540,8 +565,14 @@ func typeLiteral(typ *GoType, ref string) (jen.Code, error) {
 			return nil, fmt.Errorf("not a valid integer for %s", typ)
 		}
 		lit = jen.Lit(int(value))
+	case basic.Info()&types.IsBoolean != 0:
+		value, err := strconv.ParseBool(ref)
+		if err != nil {
+			return nil, fmt.Errorf("not a valid bool for %s", typ)
+		}
+		lit = jen.Lit(value)
 	default:
-		return nil, fmt.Errorf("unsupported type %s, expected a string or integer", typ)
+		return nil, fmt.Errorf("unsupported type %s, expected a string, integer or bool", typ)
 	}
 
 	// an untyped literal is not assignable to a named type, so convert it
@@ -1316,9 +1347,9 @@ type enumSwitchCase struct {
 }
 
 // enumSwitchMapping emits a switch over the input that assigns the mapped value for
-// every listed case, and returns an error for anything else. label names what is
-// being mapped in that error, e.g. `field Visibility`.
-func enumSwitchMapping(target *GoType, label string, cases []enumSwitchCase) GeneratorFunc {
+// every listed case, and anything else either fallback or, without one, an error.
+// label names what is being mapped in that error, e.g. `field Visibility`.
+func enumSwitchMapping(target *GoType, label string, cases []enumSwitchCase, fallback jen.Code) GeneratorFunc {
 	return func(ctx *FunctionContext, input jen.Code) jen.Code {
 		tmp := ctx.tmpVar()
 
@@ -1327,6 +1358,11 @@ func enumSwitchMapping(target *GoType, label string, cases []enumSwitchCase) Gen
 		ctx.add(jen.Switch(input).BlockFunc(func(group *jen.Group) {
 			for _, c := range cases {
 				group.Case(c.from).Block(jen.Id(tmp).Op("=").Add(c.to))
+			}
+
+			if fallback != nil {
+				group.Default().Block(jen.Id(tmp).Op("=").Add(fallback))
+				return
 			}
 
 			fmtString := jen.Lit(fmt.Sprintf("unmapped value for %s: %%v", label))

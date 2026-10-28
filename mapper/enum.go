@@ -127,10 +127,10 @@ type enumMapEntry struct {
 	to   string
 }
 
-// parseEnumMap parses the value of a `map:"a=X,b=Y"` directive. Both sides of a
-// pair may be a constant name or the literal value of a constant.
-func parseEnumMap(directive string) ([]enumMapEntry, error) {
-	var entries []enumMapEntry
+// parseEnumMap parses the value of a `map:"a=X,b=Y,*=Z"` directive. Both sides of a
+// pair may be a constant name or the literal value of a constant. The target of a
+// `*` source is returned as fallback, it stands for every value not listed.
+func parseEnumMap(directive string) (entries []enumMapEntry, fallback string, err error) {
 
 	seen := make(map[string]bool)
 	for _, pair := range strings.Split(directive, ",") {
@@ -141,29 +141,34 @@ func parseEnumMap(directive string) ([]enumMapEntry, error) {
 
 		from, to, ok := strings.Cut(pair, "=")
 		if !ok {
-			return nil, fmt.Errorf("expected pairs of the form source=target, got %q", pair)
+			return nil, "", fmt.Errorf("expected pairs of the form source=target, got %q", pair)
 		}
 
 		from = strings.TrimSpace(from)
 		to = strings.TrimSpace(to)
 
 		if from == "" || to == "" {
-			return nil, fmt.Errorf("both sides of %q must be non-empty", pair)
+			return nil, "", fmt.Errorf("both sides of %q must be non-empty", pair)
 		}
 
 		if seen[from] {
-			return nil, fmt.Errorf("duplicate source value %q", from)
+			return nil, "", fmt.Errorf("duplicate source value %q", from)
 		}
 		seen[from] = true
+
+		if from == "*" {
+			fallback = to
+			continue
+		}
 
 		entries = append(entries, enumMapEntry{from: from, to: to})
 	}
 
-	if len(entries) == 0 {
-		return nil, errors.New("no mappings given")
+	if len(entries) == 0 && fallback == "" {
+		return nil, "", errors.New("no mappings given")
 	}
 
-	return entries, nil
+	return entries, fallback, nil
 }
 
 // lookupEnumConstant resolves a reference from a `map:` directive against the
@@ -276,12 +281,28 @@ func matchEnumConstants(from, to types.Type) (pairs []enumPair, unmatched []stri
 		}
 	}
 
+	// a second chance for constants left over: protoc's SetState_SET_ACTIVE carries
+	// a prefix beyond its type name, but one all constants of the type share
+	fromPrefix, toPrefix := sharedPrefix(fromConsts), sharedPrefix(toConsts)
+	byShortKey := map[string][]enumConstant{}
+	for key, consts := range byKey {
+		byShortKey[key] = append(byShortKey[key], consts...)
+	}
+	for _, c := range toConsts {
+		if key := shortKey(c, toPrefix); key != "" {
+			byShortKey[key] = appendConstant(byShortKey[key], c)
+		}
+	}
+
 	for _, c := range fromConsts {
-		var candidates []enumConstant
-		for _, key := range enumKeys(c, fromName) {
-			for _, target := range byKey[key] {
-				candidates = appendConstant(candidates, target)
+		candidates := lookupCandidates(byKey, enumKeys(c, fromName))
+
+		if len(candidates) == 0 {
+			keys := enumKeys(c, fromName)
+			if key := shortKey(c, fromPrefix); key != "" {
+				keys = append(keys, key)
 			}
+			candidates = lookupCandidates(byShortKey, keys)
 		}
 
 		if len(candidates) != 1 {
@@ -293,6 +314,44 @@ func matchEnumConstants(from, to types.Type) (pairs []enumPair, unmatched []stri
 	}
 
 	return pairs, unmatched
+}
+
+func lookupCandidates(byKey map[string][]enumConstant, keys []string) []enumConstant {
+	var candidates []enumConstant
+	for _, key := range keys {
+		for _, target := range byKey[key] {
+			candidates = appendConstant(candidates, target)
+		}
+	}
+
+	return candidates
+}
+
+// sharedPrefix is the longest prefix ending in an underscore that the names of all
+// consts share, or an empty string for fewer than two constants.
+func sharedPrefix(consts []enumConstant) string {
+	if len(consts) < 2 {
+		return ""
+	}
+
+	prefix := consts[0].name
+	for _, c := range consts[1:] {
+		for !strings.HasPrefix(c.name, prefix) {
+			prefix = prefix[:len(prefix)-1]
+		}
+	}
+
+	return prefix[:strings.LastIndex(prefix, "_")+1]
+}
+
+// shortKey is the key of a constant with prefix cut off its name, or an empty
+// string without a prefix.
+func shortKey(c enumConstant, prefix string) string {
+	if prefix == "" {
+		return ""
+	}
+
+	return squashName(strings.TrimPrefix(c.name, prefix))
 }
 
 // enumKeys are the keys a constant is matched by: its name and, for a string

@@ -127,6 +127,7 @@ func TestParseEnumMap(t *testing.T) {
 		name      string
 		directive string
 		want      []enumMapEntry
+		fallback  string
 		wantErr   bool
 	}{
 		{
@@ -149,6 +150,14 @@ func TestParseEnumMap(t *testing.T) {
 			directive: "active=ENABLED,",
 			want:      []enumMapEntry{{"active", "ENABLED"}},
 		},
+		{
+			name:      "pairs and a fallback",
+			directive: "active=ENABLED, *=UNKNOWN",
+			want:      []enumMapEntry{{"active", "ENABLED"}},
+			fallback:  "UNKNOWN",
+		},
+		{name: "only a fallback", directive: "*=UNKNOWN", fallback: "UNKNOWN"},
+		{name: "duplicate fallback", directive: "*=A,*=B", wantErr: true},
 		{name: "missing separator", directive: "active", wantErr: true},
 		{name: "empty target", directive: "active=", wantErr: true},
 		{name: "empty source", directive: "=ENABLED", wantErr: true},
@@ -159,12 +168,16 @@ func TestParseEnumMap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseEnumMap(tt.directive)
+			got, fallback, err := parseEnumMap(tt.directive)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("parseEnumMap(%q) error = %v, wantErr %v", tt.directive, err, tt.wantErr)
 			}
 			if tt.wantErr {
 				return
+			}
+
+			if fallback != tt.fallback {
+				t.Errorf("parseEnumMap(%q) fallback = %q, want %q", tt.directive, fallback, tt.fallback)
 			}
 
 			if len(got) != len(tt.want) {
@@ -285,6 +298,22 @@ func TestMatchEnumConstants(t *testing.T) {
 
 	if len(unmatched) != 1 || unmatched[0] != "StateLost" {
 		t.Errorf("unmatched = %v, want [StateLost]", unmatched)
+	}
+
+	// SET_ is no part of the type name, but every constant carries it
+	shortState := enumType("example.com/pb", "SetState", types.Typ[types.Int32],
+		constDef{"SetState_SET_ACTIVE", num(0)},
+		constDef{"SetState_SET_CLOSING", num(1)},
+		constDef{"SetState_SET_DELETED", num(2)},
+	)
+	pairs, unmatched = matchEnumConstants(state, shortState)
+	got = map[string]string{}
+	for _, p := range pairs {
+		got[p.from.name] = p.to.name
+	}
+	if got["StateActive"] != "SetState_SET_ACTIVE" || got["StateClosing"] != "SetState_SET_CLOSING" ||
+		got["StateGone"] != "SetState_SET_DELETED" || len(unmatched) != 1 {
+		t.Errorf("matchEnumConstants() with a shared prefix = %v, unmatched %v", got, unmatched)
 	}
 
 	if pairs, _ := matchEnumConstants(state, types.Typ[types.Int32]); pairs != nil {
