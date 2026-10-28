@@ -185,6 +185,11 @@ finds ent's `SetID` without a directive. Two candidates that both match that way
 (`Id` next to `ID`) are an error rather than a silent pick, spell the name exactly
 with `from:` in that case.
 
+A method with several inputs also fills a field from a parameter of its name, again
+ignoring case, when no input has such a field: `Row(in *Policy, closedAtNs int64) *Row`
+sets `ClosedAtNs` from `closedAtNs`. Only after that does a field without a source
+fall back to any input that converts to its type as a whole.
+
 ### Field Mapping Directives
 
 In method doc comments:

@@ -281,6 +281,22 @@ func (m *Generator) sourceName(f *GoFunction, name string) string {
 	return name
 }
 
+// namedInput is the input of a method with several inputs whose parameter name is
+// name, ignoring case, so that `closedAtNs int64` fills a field ClosedAtNs.
+func namedInput(f *GoFunction, name string) *GoParameter {
+	if len(f.inputs) < 2 {
+		return nil
+	}
+
+	for _, input := range f.inputs {
+		if strings.EqualFold(input.name, name) {
+			return input
+		}
+	}
+
+	return nil
+}
+
 // resolveField finds the source for one output field and the generator that turns
 // it into the field's type. A nil mapping means the field is ignored.
 func (m *Generator) resolveField(f *GoFunction, field *GoField) (*ResolvedMapping, error) {
@@ -376,6 +392,20 @@ func (m *Generator) resolveField(f *GoFunction, field *GoField) (*ResolvedMappin
 			}
 		} else {
 			log.Printf("Can't convert from type %s to %s", inputField.typ(), field.typ)
+		}
+	}
+
+	// next to the source, a method may take a parameter named like the field
+	if input := namedInput(f, source); mapping == nil && !found && input != nil {
+		found = true
+
+		if generator, canFail := m.buildGenerator(input.typ, field.typ); generator != nil {
+			mapping = &ResolvedMapping{
+				output:    field,
+				input:     jen.Id(input.name),
+				generator: generator,
+				canFail:   canFail,
+			}
 		}
 	}
 

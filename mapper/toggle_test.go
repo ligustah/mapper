@@ -47,3 +47,12 @@ func TestInline(t *testing.T) {
 		"Name: in.Host.Name",
 	)
 }
+
+func TestFieldFromParameter(t *testing.T) {
+	assertContains(t, method(t, mustGenerate(t, "params"), "ToRow"),
+		"Name: in.Name",
+		"ClosedAtNs: closedAtNs",
+		"Owner: owner",
+		"Actor: actor",
+	)
+}
