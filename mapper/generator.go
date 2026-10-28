@@ -793,17 +793,23 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 	// never copied out of it
 	gen := methodConverter(methodName, elemType, hasError)
 	produces := resultGoType
+	convertFails := false
 	switch {
 	case source == "." && len(f.inputs) == 1:
 		// a lone pointer input has been nil-checked when the method starts
+		gen, produces, convertFails = m.convertResult(gen, resultGoType, field.typ, false)
 	case sliced:
-		elemGen, _ := liftMethodCall(srcType.Element, field.typ.Element, resultGoType, gen)
-		gen, produces = sliceMapping(field.typ.Element, elemGen), field.typ
+		elemGen, result, fails := m.convertResult(gen, resultGoType, field.typ.Element, srcType.Element.Kind == PointerKind)
+		elemGen, _ = liftMethodCall(srcType.Element, field.typ.Element, result, elemGen)
+		gen, produces, convertFails = sliceMapping(field.typ.Element, elemGen), field.typ, fails
 	case mapped:
-		valueGen, _ := liftMethodCall(srcType.Value, field.typ.Value, resultGoType, gen)
-		gen, produces = mapMapping(field.typ.Key, field.typ.Value, identityMapping, valueGen), field.typ
+		valueGen, result, fails := m.convertResult(gen, resultGoType, field.typ.Value, srcType.Value.Kind == PointerKind)
+		valueGen, _ = liftMethodCall(srcType.Value, field.typ.Value, result, valueGen)
+		gen, produces, convertFails = mapMapping(field.typ.Key, field.typ.Value, identityMapping, valueGen), field.typ, fails
 	default:
-		gen, produces = liftMethodCall(srcType, field.typ, resultGoType, gen)
+		var result *GoType
+		gen, result, convertFails = m.convertResult(gen, resultGoType, field.typ, srcType.Kind == PointerKind)
+		gen, produces = liftMethodCall(srcType, field.typ, result, gen)
 	}
 
 	guardFails := false
@@ -815,9 +821,35 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 		output:    field,
 		input:     inputExpr,
 		generator: gen,
-		canFail:   hasError || guardFails,
+		canFail:   hasError || convertFails || guardFails,
 		produces:  produces,
 	}, nil
+}
+
+// convertResult chains gen with a conversion of what it produces, result, into the
+// target type when the two differ, as for any field: an int method result fills an
+// int32 field. With lifted, the call is about to be wrapped for a pointer source,
+// which supplies a pointer target's address itself. A pointer result whose value
+// fits the target is left alone, a builder picks its nillable setter for it. It
+// returns the generator, what it produces and whether the conversion can fail.
+func (m *Generator) convertResult(gen GeneratorFunc, result, target *GoType, lifted bool) (GeneratorFunc, *GoType, bool) {
+	if lifted && target.Kind == PointerKind && result.Kind != PointerKind {
+		target = target.Element
+	}
+
+	if assignableTo(result.Raw, target.Raw) ||
+		(result.Kind == PointerKind && assignableTo(result.Element.Raw, target.Raw)) {
+		return gen, result, false
+	}
+
+	conv, canFail := m.buildGenerator(result, target)
+	if conv == nil {
+		return gen, result, false
+	}
+
+	return func(ctx *FunctionContext, input jen.Code) jen.Code {
+		return conv(ctx, gen(ctx, input))
+	}, target, canFail
 }
 
 // fitsInput reports whether a value of typ, or the value behind it, can be passed

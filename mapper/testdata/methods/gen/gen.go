@@ -41,12 +41,31 @@ func (m MapperImpl) ToResult(in *methods.Probe) (*methods.Result, error) {
 		tmp8[k] = methods.Hex(v)
 	}
 
+	var tmp9 methods.Level
+	if tmp10 := in.Level; tmp10 != nil {
+		tmp9 = methods.Level(tmp10.Size())
+	}
+	tmp11 := make([]int64, len(in.Sizes))
+	for i := range in.Sizes {
+		tmp11[i] = int64(in.Sizes[i].Size())
+	}
+
+	var tmp12 *int32
+	if tmp13 := in.Size; tmp13 != nil {
+		tmp14 := int32(tmp13.Size())
+		tmp12 = &tmp14
+	}
+
 	return &methods.Result{
-		Passed: in.Passed(),
-		Body:   tmp0,
-		Blobs:  tmp3,
-		Sums:   tmp7,
-		Totals: tmp8,
+		Passed:  in.Passed(),
+		Body:    tmp0,
+		Blobs:   tmp3,
+		Sums:    tmp7,
+		Totals:  tmp8,
+		StopsAt: int32(in.Ceiling()),
+		Level:   tmp9,
+		Sizes:   tmp11,
+		Size:    tmp12,
 	}, nil
 }
 

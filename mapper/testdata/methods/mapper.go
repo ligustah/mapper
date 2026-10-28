@@ -12,16 +12,29 @@ type Probe struct {
 	Blobs  []*Blob
 	Sums   []int
 	Totals map[string]int
+	Level  *Blob
+	Sizes  []Blob
+	Size   *Blob
 }
 
 func (p *Probe) Passed() bool { return p.Status == "ok" }
 
+func (p *Probe) Ceiling() int { return len(p.Status) }
+
+type Level int
+
+func (b Blob) Size() int { return len(b.data) }
+
 type Result struct {
-	Passed bool
-	Body   string
-	Blobs  []string
-	Sums   []string
-	Totals map[string]string
+	Passed  bool
+	Body    string
+	Blobs   []string
+	Sums    []string
+	Totals  map[string]string
+	StopsAt int32
+	Level   Level
+	Sizes   []int64
+	Size    *int32
 }
 
 func Hex(v int) string { return strconv.FormatInt(int64(v), 16) }
@@ -33,5 +46,9 @@ type Mapper interface {
 	// field:Blobs method:"Decode"
 	// field:Sums using:"Hex"
 	// field:Totals using:"Hex"
+	// field:StopsAt from:"." method:"Ceiling"
+	// field:Level method:"Size"
+	// field:Sizes method:"Size"
+	// field:Size method:"Size"
 	ToResult(in *Probe) (*Result, error)
 }

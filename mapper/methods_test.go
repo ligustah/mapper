@@ -26,3 +26,11 @@ func TestPointerResults(t *testing.T) {
 		"tmp10[k] = v.String()",
 	)
 }
+
+// TestMethodResultConverts covers a method result of another type than the field,
+// which goes through the conversion a field of that type would.
+func TestMethodResultConverts(t *testing.T) {
+	assertContains(t, method(t, mustGenerate(t, "methods"), "ToResult"),
+		"StopsAt: int32(in.Ceiling())",
+	)
+}
