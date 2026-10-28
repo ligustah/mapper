@@ -1,643 +1,354 @@
-# Go Type Mapper
+# mapper
 
-The `Go Type Mapper` is a code generation tool that automates the creation of type mapping logic between different Go structs. It eliminates the need for writing repetitive boilerplate code when converting data structures, especially useful when dealing with DTOs, database models, or Protocol Buffer messages.
+`mapper` generates type-safe conversion code between Go types. Declare the conversions you need as methods of an annotated interface, and the generator writes the implementation: field by field, through pointers, slices, maps and nested structs, with enums, custom converters and error handling.
 
-By defining simple Go interfaces with special comments, you can instruct the `mapper` tool to generate efficient and type-safe conversion functions. A key feature of the `mapper` is its ability to discover indirect mapping routes between types using a sophisticated type graph, allowing for flexible and powerful transformations even when direct conversions are not immediately apparent.
+It is built for the boundary code that piles up between layers: database models and Protocol Buffer messages, ent entities and API types, one service's structs and another's.
+
+```go
+// mapper:generate
+type UserMapper interface {
+	// field:FullName from:"Name"
+	// field:Password from:"-"
+	ToView(in *models.User) (*models.UserView, error)
+	ToViews(in []*models.User) ([]*models.UserView, error)
+}
+```
 
 ## Installation
 
-To install the `mapper` tool, you can use `go install`:
+mapper requires Go 1.27 or newer. Add it as a tool of your module:
 
 ```bash
-go install github.com/ligustah/mapper@latest
+go get -tool github.com/ligustah/mapper@latest
 ```
 
-Make sure your `GOPATH/bin` directory is in your system's `PATH` to easily run the `mapper` executable.
-
-## Quick Start Example
-
-Let's say you have two structs, `UserSource` and `UserTarget`, and you want to map fields from `UserSource` to `UserTarget`.
-
-**1. Define your source and target structs:**
+and run it with `go generate`, from a `//go:generate` line in the package that declares your interfaces:
 
 ```go
-// models/source.go
-package models
-
-type UserSource struct {
-	ID    string
-	Name  string
-	Email string
-}
-
-// models/target.go
-package models
-
-type UserTarget struct {
-	UserID string
-	FullName string
-	EmailAddress string
-}
+//go:generate go tool mapper .
 ```
 
-**2. Create a mapping interface:**
+Alternatively install the binary with `go install github.com/ligustah/mapper@latest` and run `mapper <package>`.
 
-Create a new Go file (e.g., `mapper/user_mapper.go`) and define an interface with the `// mapper:generate` annotation. Each method in this interface will represent a mapping function.
+## Quick start
+
+Given two structs:
 
 ```go
-// mapper/user_mapper.go
-package mapper
+package models
 
-import "your_module/models"
+type User struct {
+	ID       string
+	Name     string
+	Email    string
+	Age      int
+	Password string
+	Address  *Address
+	Tags     []Tag
+	Score    string
+}
 
-//go:generate mapper .
+func (u *User) DisplayName() string { return u.Name + " <" + u.Email + ">" }
+
+type Address struct{ Street, City string }
+
+type Tag struct{ Label string }
+
+type UserView struct {
+	ID          string
+	FullName    string
+	Email       string
+	Age         int32
+	Password    string
+	Address     *AddressView
+	Tags        []*TagView
+	Score       int64
+	DisplayName string
+}
+
+type AddressView struct{ Street, City string }
+
+type TagView struct{ Label string }
+```
+
+declare the conversion in a package of your own, annotated with `// mapper:generate`:
+
+```go
+package mapping
+
+import "example.com/app/models"
+
+//go:generate go tool mapper .
+
 // mapper:generate
 type UserMapper interface {
-	MapUser(source *models.UserSource) *models.UserTarget
+	// field:FullName from:"Name"
+	// field:Password from:"-"
+	// field:DisplayName from:"." method:"DisplayName"
+	ToView(in *models.User) (*models.UserView, error)
+
+	ToViews(in []*models.User) ([]*models.UserView, error)
 }
 ```
 
-**3. Run the `mapper` tool:**
-
-Navigate to your project's root directory in your terminal and run:
-
-```bash
-mapper ./mapper
-```
-
-This command will parse the `mapper` directory, find your `UserMapper` interface, and generate a new file (e.g., `mapper/gen/user_mapper_gen.go`) containing the implementation of `UserMapper`.
-
-**4. Use the generated mapper:**
-
-You can now use the generated `UserMapperImpl` in your application:
+`go generate ./...` writes `mapping/gen/gen.go`:
 
 ```go
-package main
-
-import (
-	"fmt"
-	"your_module/mapper"
-	"your_module/models"
-)
-
-func main() {
-	userSource := &models.UserSource{
-		ID    : "123",
-		Name  : "John Doe",
-		Email : "john.doe@example.com",
-	}
-
-	userMapper := &mapper.UserMapperImpl{} // Use the generated implementation
-	userTarget := userMapper.MapUser(userSource)
-
-	fmt.Printf("Mapped User: %+v\n", userTarget)
-	// Expected output (assuming default mapping):
-	// Mapped User: &{UserID:123 FullName:John Doe EmailAddress:john.doe@example.com}
-}
-```
-
-## Core Concepts
-
-### `// mapper:generate` Annotation
-
-This special comment placed directly above a Go interface tells the `mapper` tool that this interface should be processed for code generation. Only interfaces with this annotation will have their mapping implementations generated.
-
-```go
-// mapper:generate
-type MyMappingInterface interface {
-    // ... mapping methods ...
-}
-```
-
-### Mapping Interfaces
-
-Each method within a `// mapper:generate` annotated interface defines a single mapping operation. The method's signature (input parameters and return values) dictates the types involved in the mapping.
-
-*   **Input:** Typically, a single input parameter representing the source type.
-*   **Output:** A single return value representing the target type.
-*   **Error Handling:** An optional second return value of type `error` can be used to indicate that the mapping might fail.
-
-### Generated Code Structure
-
-The `mapper` tool generates a new Go file (by default in a `gen` subdirectory relative to the parsed package) that contains an implementation struct for your mapping interface. For each method in your interface, a corresponding method will be generated on this implementation struct.
-
-For example, for `type MyMapper interface { MapFoo(in *Foo) *Bar }`, the tool might generate:
-
-```go
-// gen/my_mapper_gen.go
-package mypackagegen
-
-import (
-    "your_module/mypackage"
-    "your_module/models" // Assuming Foo and Bar are in models
-)
-
-type MyMapperImpl struct{}
-
-func (m *MyMapperImpl) MapFoo(in *models.Foo) *models.Bar {
-    // ... generated mapping logic ...
-}
-```
-
-## Detailed Usage & Capabilities
-
-The `mapper` tool offers several ways to customize how fields are mapped, primarily through doc comments on the mapping interface methods.
-
-### 1. Basic Field Mapping (Direct Assignment)
-
-By default, the `mapper` tool attempts to map fields with identical names and compatible types directly.
-
-**Example Interface:**
-
-```go
-// mapper:generate
-type SimpleMapper interface {
-	MapData(source *SourceData) *TargetData
-}
-
-type SourceData struct {
-	ID   string
-	Name string
-}
-
-type TargetData struct {
-	ID   string
-	Name string
-}
-```
-
-**Generated Logic:**
-
-```go
-func (m *SimpleMapperImpl) MapData(source *SourceData) *TargetData {
-	return &TargetData{
-		ID:   source.ID,
-		Name: source.Name,
-	}
-}
-```
-
-### 2. Renaming Fields (`from` tag)
-
-Use the `// field:OutputFieldName from:"InputFieldName"` comment to map a field from a source field with a different name.
-
-**Example Interface:**
-
-```go
-// mapper:generate
-type RenamingMapper interface {
-	// field:TargetID from:"SourceIdentifier"
-	// field:TargetName from:"SourceName"
-	MapRenamedData(source *SourceRenamedData) *TargetRenamedData
-}
-
-type SourceRenamedData struct {
-	SourceIdentifier string
-	SourceName       string
-}
-
-type TargetRenamedData struct {
-	TargetID   string
-	TargetName string
-}
-```
-
-**Generated Logic:**
-
-```go
-func (m *RenamingMapperImpl) MapRenamedData(source *SourceRenamedData) *TargetRenamedData {
-	return &TargetRenamedData{
-		TargetID:   source.SourceIdentifier,
-		TargetName: source.SourceName,
-	}
-}
-```
-
-#### Flattening a sub-struct
-
-When the target spreads out what the source keeps in a nested struct, `// mapper:inline Report` replaces a `from:"Report.X"` line per field: a target field that no input has a field of its name for is read from `Report.<Name>`. Several names are tried in order, `// mapper:inline Report Host`, and the toggle may sit on the interface too. A pointer on the way is nil-checked as with any nested path, and a directive on the field still wins.
-
-### 3. Ignoring Fields (`-` tag)
-
-Use the `// field:FieldName from:"-"` comment to explicitly ignore a field in the target struct, preventing it from being mapped.
-
-**Example Interface:**
-
-```go
-// mapper:generate
-type IgnoringMapper interface {
-	// field:IgnoredField from:"-"
-	MapIgnoredData(source *SourceIgnoredData) *TargetIgnoredData
-}
-
-type SourceIgnoredData struct {
-	FieldA string
-	FieldB string
-}
-
-type TargetIgnoredData struct {
-	FieldA       string
-	IgnoredField string // This field will not be mapped
-}
-```
-
-**Generated Logic:**
-
-```go
-func (m *IgnoringMapperImpl) MapIgnoredData(source *SourceIgnoredData) *TargetIgnoredData {
-	return &TargetIgnoredData{
-		FieldA: source.FieldA,
-		// IgnoredField is omitted
-	}
-}
-```
-
-A target with many fields the source does not carry, ent's `Edges` or an ID the database assigns, can drop them all at once. Put `// mapper:skip-unmatched` on the method, or on the interface to cover all of its methods. A field or builder setter with neither a directive nor a source field of its name is then left unset, rather than reported. A field whose source exists but cannot be converted, and a directive naming a source that does not exist, still fail. Keep a `from:"-"` for a field that does have a source of its name but must stay unset, the toggle would map it.
-
-```go
-// mapper:generate
-// mapper:skip-unmatched
-type RowMapper interface {
-	Row(in *proto.Commit) *ent.Commit // Edges, CreatedAt, ... stay zero
-}
-```
-
-### 4. Pointer Conversions
-
-The tool can handle conversions between pointer and non-pointer types automatically, including dereferencing and taking addresses as needed.
-
-**Example Interface:**
-
-```go
-// mapper:generate
-type PointerMapper interface {
-	MapToPtr(source *SourcePtr) *TargetPtr
-	MapFromPtr(source *SourcePtr) TargetNonPtr
-	MapPtrToNonPtr(source *SourceNonPtr) *TargetNonPtr
-}
-
-type SourcePtr struct {
-	Value string
-}
-
-type TargetPtr struct {
-	Value *string
-}
-
-type SourceNonPtr struct {
-	Value string
-}
-
-type TargetNonPtr struct {
-	Value string
-}
-```
-
-**Generated Logic:**
-
-```go
-func (m *PointerMapperImpl) MapToPtr(source *SourcePtr) *TargetPtr {
-	if source == nil {
-		return nil
-	}
-	val := source.Value
-	return &TargetPtr{
-		Value: &val,
-	}
-}
-
-func (m *PointerMapperImpl) MapFromPtr(source *SourcePtr) TargetNonPtr {
-	if source == nil {
-		return TargetNonPtr{} // Or handle as appropriate
-	}
-	return TargetNonPtr{
-		Value: source.Value,
-	}
-}
-
-func (m *PointerMapperImpl) MapPtrToNonPtr(source *SourceNonPtr) *TargetNonPtr {
-	if source == nil {
-		return nil
-	}
-	return &TargetNonPtr{
-		Value: source.Value,
-	}
-}
-```
-
-### 5. Slice Conversions
-
-The `mapper` tool can generate code to convert slices of one type to slices of another, provided a mapping exists for the element types.
-
-**Example Interface:**
-
-```go
-// mapper:generate
-type SliceMapper interface {
-	MapSlice(sources []*SourceItem) []*TargetItem
-}
-
-type SourceItem struct {
-	Name string
-}
-
-type TargetItem struct {
-	ItemName string
-}
-```
-
-**Generated Logic:**
-
-```go
-func (m *SliceMapperImpl) MapSlice(sources []*SourceItem) []*TargetItem {
-	if sources == nil {
-		return nil
-	}
-	targets := make([]*TargetItem, len(sources))
-	for i := range sources {
-		targets[i] = &TargetItem{
-			ItemName: sources[i].Name,
-		}
-	}
-	return targets
-}
-```
-
-### 6. Error Handling
-
-If a mapping method in your interface includes an `error` as its second return value, the generated code will include error handling. This is particularly useful when underlying conversions (e.g., custom type conversions) might fail.
-
-**Example Interface:**
-
-```go
-// mapper:generate
-type ErrorHandlingMapper interface {
-	MapWithError(source *SourceWithError) (*TargetWithError, error)
-}
-
-type SourceWithError struct {
-	Value string
-}
-
-type TargetWithError struct {
-	ParsedValue int
-}
-```
-
-**Generated Logic (assuming a custom converter for `Value` to `ParsedValue` that can error):**
-
-```go
-func (m *ErrorHandlingMapperImpl) MapWithError(source *SourceWithError) (*TargetWithError, error) {
-	if source == nil {
-		return nil, nil // Or an appropriate error
-	}
-	parsedValue, err := strconv.Atoi(source.Value) // Example custom conversion
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse value: %w", err)
-	}
-	return &TargetWithError{
-		ParsedValue: parsedValue,
-	}, nil
-}
-```
-
-### 7. Protobuf Enum Handling
-
-The `mapper` tool automatically discovers and handles Protocol Buffer enums when they are part of the types being mapped. This simplifies conversions between Go structs and Protobuf messages that contain enum fields.
-
-*(Note: Specific examples for Protobuf enum handling would require defining `.proto` files and generated Go code, which is beyond a simple example here. The tool integrates with `go/types` to recognize these enums.)*
-
-An enum on the other side, such as the string enums ent generates, is mapped onto a Protobuf enum without annotation when their constants pair up by name. Case, underscores and the type name are ignored in the comparison, so `StateActive = "active"` of type `State` meets `SetState_SET_STATE_ACTIVE` of type `SetState` as `ACTIVE`. A string constant also matches by its value. The generated code is a switch with an error branch for values without a counterpart, so the method has to return an error. Constants that find no counterpart, like the usual `..._UNSPECIFIED`, are reported as a warning, or as an error with `-strict-enums`. A prefix every constant of a type shares counts as part of the type name, so `SetState_SET_ACTIVE` meets `StateActive` too. Where names do not line up, spell the pairs out with a `map:` directive:
-
-```go
-// field:Visibility map:"public=VisibilityProtoPublic,private=VisibilityProtoPrivate"
-// field:Kind map:"KindFile=file,KindDir=dir,*=unknown"
-// field:State map:"*=SetState_SET_UNSPECIFIED"
-```
-
-Either side is a constant name or a literal value, strings, integers and `true`/`false` alike, so an enum maps onto a plain string or bool as well. `*=X` gives the switch a default branch that yields `X` rather than an error, so the method then needs no error return for it. A `*` entry on its own pairs everything else by name.
-
-### 8. Indirect Type Mapping via Type Graph
-
-A powerful feature of the `mapper` tool is its ability to find indirect mapping routes between types. Instead of requiring a direct conversion function for every possible type pair, the `mapper` constructs a graph of all available type conversions (both direct and those defined by your mapping interfaces).
-
-If you request a mapping from `TypeA` to `TypeC`, and there's no direct `TypeA -> TypeC` conversion, the `mapper` will attempt to find an intermediate path, such as `TypeA -> TypeB -> TypeC`.
-
-**Example:**
-
-Suppose you have the following types and direct mappings:
-
-*   `func (m *MyMapperImpl) MapAToB(a *TypeA) *TypeB`
-*   `func (m *MyMapperImpl) MapBToC(b *TypeB) *TypeC`
-
-If you then define a method in your interface like:
-
-```go
-// mapper:generate
-type ComplexMapper interface {
-	MapAToC(a *TypeA) *TypeC
-}
-```
-
-The `mapper` tool will automatically chain `MapAToB` and `MapBToC` to fulfill the `MapAToC` request, generating code similar to:
-
-```go
-func (m *ComplexMapperImpl) MapAToC(a *TypeA) *TypeC {
-	b := m.MapAToB(a)
-	c := m.MapBToC(b)
-	return c
-}
-```
-
-This graph-based approach allows you to define smaller, focused mapping functions, and the `mapper` will intelligently combine them to achieve more complex transformations.
-
-#### Nested structs
-
-A nested struct needs no method of its own. When nothing converts two named structs, the generator maps them field by field through a helper on the implementation, with the same rules as a declared method and the interface's toggles, and uses it wherever the pair turns up: a field, `*T` → `*U`, `[]T` → `[]*U`, map values, a struct referring to itself:
-
-```go
-// mapper:generate
-type PlanMapper interface {
-	ToProto(in *Plan) *PlanProto // Plan.Goals []Goal → PlanProto.Goals []*GoalProto
-}
-
-// generated
-func (m PlanMapperImpl) mapGoalToGoalProto(in Goal) GoalProto { ... }
-```
-
-Directives cannot reach inside a helper, declare the method when a nested pair needs them. `// field:Key from:"."` builds a struct field out of the input's own fields the same way.
-
-### 9. Custom Mapper Functions
-
-The `mapper` tool allows you to define and register your own custom mapping functions for specific type conversions. This is useful when the default mapping logic (direct assignment, pointer/slice conversions) is insufficient, and you need to implement custom transformation logic.
-
-To use a custom mapper function:
-
-1.  **Define the Custom Mapper Function:**
-    Create a Go function in any package. The function must have one input parameter (the source type) and either one return value (the target type) or two return values (the target type and an `error`).
-
-    **Example Custom Mapper Function:**
-
-    ```go
-    // mypackage/converters.go
-    package mypackage
-
-    import (
-    	"fmt"
-    	"strconv"
-    )
-
-    // StringToInt converts a string to an int, returning an error if parsing fails.
-    func StringToInt(s string) (int, error) {
-    	return strconv.Atoi(s)
-    }
-
-    // BoolToString converts a boolean to its string representation.
-    func BoolToString(b bool) string {
-    	if b {
-    		return "true"
-    	}
-    	return "false"
-    }
-    ```
-
-2.  **Register the Custom Mapper Function:**
-    Before running the `mapper` tool, you need to register your custom function using `mapper.RegisterCustomMapper`. This is typically done in an `init()` function or at the beginning of your `main` function. The `mapper` tool will use reflection to automatically determine the input and output types, as well as whether the function returns an error.
-
-    ```go
-    // mypackage/init.go
-    package mypackage
-
-    import "github.com/ligustah/mapper/mapper"
-
-    func init() {
-    	// Register StringToInt: maps string to int
-    	mapper.RegisterCustomMapper(StringToInt)
-
-    	// Register BoolToString: maps bool to string
-    	mapper.RegisterCustomMapper(BoolToString)
-    }
-    ```
-    *   The `customMapperFunc` argument is the function itself. The `mapper` tool will use reflection to extract its input and output types, its name, package, and error-returning capability.
-
-3.  **Use the `using` Field Annotation:**
-    In your mapping interface, use the `// field:OutputFieldName using:"CustomMapperFunc"` annotation on the target field that requires the custom conversion. `CustomMapperFunc` names your custom mapper function in one of three ways:
-    *   by its full import path, e.g. `"github.com/you/app/mypackage.StringToInt"`
-    *   by a bare name, e.g. `"StringToInt"`, for a function declared in the same package as the interface
-    *   by the local name of one of the file's imports, e.g. `"mypackage.StringToInt"` when the file declaring the interface imports `mypackage`
-
-    **Example Mapping Interface using Registered Custom Mappers:**
-
-    ```go
-    // mypackage/mappers.go
-    package mypackage
-
-    // mapper:generate
-    type MyCustomMapper interface {
-    	// field:Age using:"mypackage.StringToInt"
-    	// field:IsActiveText using:"mypackage.BoolToString"
-    	MapUser(source *UserSource) (*UserTarget, error)
-    }
-
-    type UserSource struct {
-    	ID       string
-    	AgeStr   string
-    	IsActive bool
-    }
-
-    type UserTarget struct {
-    	ID         string
-    	Age        int
-    	IsActiveText string
-    }
-    ```
-
-**Generated Logic:**
-
-```go
-func (m *MyCustomMapperImpl) MapUser(source *UserSource) (*UserTarget, error) {
-	if source == nil {
+func (m UserMapperImpl) ToView(in *models.User) (*models.UserView, error) {
+	if in == nil {
 		return nil, nil
 	}
-	target := &UserTarget{
-		ID: source.ID,
+	var tmp0 *models.AddressView
+	if tmp1 := in.Address; tmp1 != nil {
+		tmp2 := *tmp1
+		tmp3 := models.AddressView(tmp2)
+		tmp0 = &tmp3
+	}
+	tmp4 := make([]*models.TagView, len(in.Tags))
+	for i := range in.Tags {
+		tmp5 := m.mapTagToTagView(in.Tags[i])
+		tmp4[i] = &tmp5
 	}
 
-	// Generated call to StringToInt
-	age, err := mypackage.StringToInt(source.AgeStr)
+	tmp6, err := strconv.ParseInt(in.Score, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("failed to map AgeStr: %w", err)
+		return nil, err
 	}
-	target.Age = age
 
-	// Generated call to BoolToString
-	target.IsActiveText = mypackage.BoolToString(source.IsActive)
-
-	return target, nil
+	return &models.UserView{
+		ID:          in.ID,
+		FullName:    in.Name,
+		Email:       in.Email,
+		Age:         int32(in.Age),
+		Address:     tmp0,
+		Tags:        tmp4,
+		Score:       tmp6,
+		DisplayName: in.DisplayName(),
+	}, nil
 }
+
+func (m UserMapperImpl) ToViews(in []*models.User) ([]*models.UserView, error) {
+	tmp0 := make([]*models.UserView, len(in))
+	for i := range in {
+		tmp1, err := m.ToView(in[i])
+		if err != nil {
+			return nil, err
+		}
+
+		tmp0[i] = tmp1
+	}
+
+	return tmp0, nil
+}
+
+func (m UserMapperImpl) mapTagToTagView(in models.Tag) models.TagView {
+	return models.TagView{
+		Label: in.Label,
+	}
+}
+
+type UserMapperImpl struct{}
+
+var _ mapping.UserMapper = (*UserMapperImpl)(nil)
 ```
 
-A function of an element type applies to each element: with `func Hex(int) string`, `using:"Hex"` maps `[]int` onto `[]string` and `map[string]int` onto `map[string]string`.
-
-#### Calling a method (`method` tag)
-
-`// field:Body method:"Decode"` calls a no-argument method on the source field, `Decode()` here. The method may return `(T, error)`, in which case the mapping method needs an error return. A pointer source is nil-checked first, a slice or map has the method called on every element or value, and `from:"."` calls it on the input itself:
+and you use it through the interface:
 
 ```go
-// field:Passed from:"." method:"Passed"
+var m mapping.UserMapper = gen.UserMapperImpl{}
+view, err := m.ToView(user)
+```
+
+The generated file is deterministic: regenerating an unchanged package gives the same bytes.
+
+## How fields are mapped
+
+Every exported field of the target is filled from the inputs:
+
+1. A [directive](#directives) on the field decides, if there is one.
+2. Otherwise the input field of the same name is used. Only if there is none is the name compared case-insensitively, so protoc's `Id` finds `ID`. Two fields that both match that way are an error.
+3. With several inputs, a field may also come from a parameter of its name: `Row(in *Policy, closedAtNs int64) *Row` sets `ClosedAtNs`.
+4. A field nothing provides is an error, unless [`mapper:skip-unmatched`](#toggles) is set.
+
+The value is then converted to the field's type by the first rule that applies:
+
+- **Assignable** types are copied, with nil checks and addresses taken between `T` and `*T` as needed. A nil pointer becomes the zero value.
+- **A converter**: a method of the same interface, a [custom converter](#custom-converters) or a builtin one, possibly chained. `TypeA → TypeB → TypeC` is found when the interface declares both steps.
+- **A plain Go conversion** between types with the same underlying type (two `type X string`), integers of any width, and `string` ↔ `[]byte`. `int` ↔ `float64` or `string` ↔ `int` need a converter. `time.Duration` never converts to or from an integer on its own, since a plain conversion would silently carry nanoseconds.
+- **Enums** whose constants pair up by name, see [Enums](#enums).
+- **Containers**: `[]T` → `[]U`, `[N]T` → `[N]U` and `map[K]V` → `map[K2]V2` convert element by element; `*T` → `*U` converts the value behind the pointer and keeps nil.
+- **Nested structs**: two named structs nothing else converts are mapped field by field through a helper generated on the implementation (`mapTagToTagView` above), used wherever the pair appears, including structs that refer to themselves. A struct holding a lock, such as any protobuf message, gets a helper over pointers so that it is never copied. Directives don't reach inside a helper; declare a method when a nested pair needs them.
+
+Builtin converters cover `string` ↔ integers via `strconv` (parsing can fail), `time.Time` ↔ `*timestamppb.Timestamp`, `time.Duration` ↔ `*durationpb.Duration`, and the `null.String`/`null.Time` types of `volatiletech/null`. The protobuf and null converters are only available when your module depends on those packages.
+
+A method whose result is not a struct, such as `ToViews` above, converts its single input as a whole by the same rules.
+
+## Directives
+
+Directives are comments on an interface method, one per target field: `// field:<Target> <tag>:"<value>"`.
+
+| Directive | Effect |
+| --- | --- |
+| `from:"Source"` | read from another field |
+| `from:"Edges.Owner.Name"` | read from a nested field, nil-safe (see [Nested paths](#nested-paths)) |
+| `from:"."` | convert the input itself, e.g. to build a struct out of the input's own fields |
+| `from:"-"` | leave the field unset |
+| `using:"Func"` | convert with a function, see [Custom converters](#custom-converters) |
+| `method:"Name"` | call a method on the source value, see below |
+| `map:"a=X,b=Y,*=Z"` | map listed values explicitly, see [Enums](#enums) |
+
+`method:"Decode"` calls a method without arguments on the source field. It may return `(T, error)`. A pointer source is nil-checked first, a slice or map has the method called on every element or value, and the result is converted to the field's type like any value. With `from:"."` the method is called on the input itself:
+
+```go
 // field:Body method:"Decode"
+// field:Passed from:"." method:"Passed"
 ToResult(in *Probe) (*Result, error)
 ```
 
-This feature provides a powerful way to extend the `mapper` tool's capabilities with your own domain-specific conversion logic.
+## Toggles
 
-### 10. Filling Builders
+Toggles stand on a line of their own, on a method or on the interface to cover all of its methods.
 
-Some targets are not structs but builders, such as the `Create` and `UpdateOne` builders ent generates. A method whose output type is also one of its inputs fills that builder instead of returning a struct:
+`// mapper:skip-unmatched` leaves every target field without a directive and without a source of its name unset, rather than reporting it. That is useful for ent's `Edges`, IDs the database assigns and similar. A field whose source exists but cannot be converted, and a directive naming a missing source, still fail. A field that has a source of its name but must stay unset still needs its `from:"-"`.
+
+`// mapper:inline Settings` reads a field without a source of its name from `Settings.<Name>`, as if `from:"Settings.<Name>"` were written for it. Several names are tried in order: `// mapper:inline Report Host`.
 
 ```go
-// mapper:generate
-type Mapper interface {
-	// field:ID from:"-"
-	CommitRow(in *proto.Commit, b *ent.CommitRowCreate) *ent.CommitRowCreate
+// mapper:inline Settings
+// field:Created from:"-"
+Profile(in *models.UserMessage, owner string) *models.Profile
+```
+
+```go
+func (m RowMapperImpl) Profile(in *models.UserMessage, owner string) *models.Profile {
+	var tmp0 string
+	if in.Settings != nil {
+		tmp0 = in.Settings.Theme
+	}
+
+	var tmp1 string
+	if in.Settings != nil {
+		tmp1 = in.Settings.Language
+	}
+
+	return &models.Profile{
+		Name:     in.Name,
+		Theme:    tmp0,
+		Language: tmp1,
+		Owner:    owner,
+	}
 }
 ```
 
-Every method `SetX(v T)` on the builder that returns the builder is a target field named `X` of type `T`. It is resolved with the same rules and directives as a struct field and rendered as one setter call. The builder is returned for chaining, so the caller adds what the source does not carry:
+`// mapper:skip-optional` applies to [builders](#builders) only.
+
+## Enums
+
+Two enum types with the same underlying type and the same values convert directly. When the values differ, the constants are paired by name: case, underscores, the type name and a prefix shared by all constants are ignored, so ent's `StateActive = "active"` meets protoc's `SetState_SET_STATE_ACTIVE` or `SetState_SET_ACTIVE` as `ACTIVE`. A string constant also matches by its value. The generated switch has an error branch for values outside the declared constants, so the method has to return an error:
 
 ```go
-err := m.CommitRow(commit, tx.CommitRow.Create()).SetRef(ref.Hash).SetSetID(setID).Exec(ctx)
+var tmp6 models.StatusView
+switch in.Status {
+case models.StatusActive:
+	tmp6 = models.StatusView_STATUS_ACTIVE
+case models.StatusBlocked:
+	tmp6 = models.StatusView_STATUS_BLOCKED
+default:
+	return nil, fmt.Errorf("unmapped value for StatusView: %v", in.Status)
+}
 ```
 
-A nil source leaves the builder untouched. Two ent conventions are recognised: `SetNillableX(*T)` is used instead of `SetX(T)` when the source field or the converter hands back a pointer, so nil never turns into a zero value; and where an edge has both `SetX(*Entity)` and `SetXID(id)`, the id form is the field unless a directive addresses `X`. Variadic adders such as `AddFileIDs(...)` are not fields. As with structs, a setter without a source is an error until it is ignored with `from:"-"`.
+Source constants without a counterpart are reported as warnings, or as errors with `-strict-enums`.
 
-Ent entities often have many optional columns a given source never carries. Rather than ignoring each of them, put `// mapper:skip-optional` on the method, or on the interface to cover all of its methods. An optional setter, one with a `SetNillableX` twin, that has neither a directive nor a source field of its name is then left unset. Required setters are still an error.
+Where names don't line up, list the pairs with `map:`. Either side is a constant name or a literal value (strings, integers or `true`/`false`), so an enum also maps onto a plain string or bool. `*=X` replaces the error branch with a default value, and on its own pairs everything else by name:
 
-## Building and Running the Generator
-
-To build the `mapper` tool from source:
-
-```bash
-go build -o mapper .
+```go
+// field:Role map:"admin=RoleView_ROLE_ADMIN,member=RoleView_ROLE_MEMBER,*=RoleView_ROLE_UNKNOWN"
+// field:State map:"*=SetState_SET_UNSPECIFIED"
 ```
 
-To run the generator on your project:
+`map:` works on values, on `*T` → `*U` and on `[]T` → `[]U`.
 
-```bash
-./mapper <path_to_package_to_parse>
+## Custom converters
+
+`using:"Func"` converts a field with a function of your own, `func(T) U` or `func(T) (U, error)`:
+
+```go
+// Unix turns a time into seconds.
+func Unix(t time.Time) int64 { return t.Unix() }
+
+// mapper:generate
+type RowMapper interface {
+	// field:Created from:"CreatedAt" using:"Unix"
+	Stamp(in *models.User) *models.Profile
+}
 ```
 
-For example, if your mapping interfaces are in `./pkg/mymap`, you would run:
+The function is named as:
 
-```bash
-./mapper ./pkg/mymap
+- `"Unix"`, a function of the interface's own package
+- `"conv.Unix"`, through an import of the file that declares the interface
+- `"example.com/app/conv.Unix"`, by its full import path
+- `"example.com/app/conv.(*Clock).Unix"`, a method without arguments on the source type
+
+A pointer source is nil-checked before the call. For slices and maps, a function of the element type is applied to every element or value: with `func Hex(int) string`, `using:"Hex"` maps `[]int` onto `[]string`.
+
+A converter needed in many places is better declared once as a method of the interface. Every method with a single input is a converter for the rest of the interface, and the generator chains them.
+
+`mapper.RegisterCustomMapper(fn)` registers a converter for every field of its types. It only takes effect in a generator binary of your own that imports `github.com/ligustah/mapper/mapper`, since the `mapper` command cannot run code from the package it generates for.
+
+## Builders
+
+A method whose output is also one of its inputs fills a builder instead of returning a struct, the shape of ent's `Create` and `UpdateOne` builders. Every method `SetX(v T)` returning the builder is a target field `X`:
+
+```go
+// field:CreatedAt from:"-"
+UserRow(in *models.UserMessage, b *models.UserCreate) *models.UserCreate
 ```
 
-The generated code will typically appear in a `gen` subdirectory within the parsed package (e.g., `./pkg/mymap/gen`).
+```go
+func (m RowMapperImpl) UserRow(in *models.UserMessage, b *models.UserCreate) *models.UserCreate {
+	if in == nil {
+		return b
+	}
+	b.SetID(in.Id)
+	b.SetName(in.Name)
+	b.SetNillableNote(in.Note)
+	b.SetTeamID(in.TeamId)
 
-## Development Conventions
+	return b
+}
+```
 
-*   **Interface-driven Mapping:** Define your mapping logic using Go interfaces.
-*   **Doc Comment Annotations:** Use `// mapper:generate` on interfaces and `// field:Name from:"Source"` on methods to guide code generation.
-*   **Error Handling:** Design mapping methods to return `error` when conversions might fail.
-*   **Dependencies:** Project dependencies are managed via `go.mod`.
+The builder comes back for chaining, so the caller adds what the source doesn't carry: `m.UserRow(msg, client.User.Create()).SetCreatedAt(now).Exec(ctx)`. A nil source leaves the builder untouched. Two ent conventions are built in:
+
+- `SetNillableX(*T)` is used instead of `SetX(T)` when the source hands over a pointer, so nil never becomes a zero value.
+- For an edge with both `SetX(*Entity)` and `SetXID(id)`, the id form is the field, unless a directive addresses `X`.
+
+Variadic adders like `AddTagIDs(...)` are not fields. `// mapper:skip-optional` leaves optional setters, the ones with a `SetNillableX` twin, unset when nothing provides them; required setters still need a source.
+
+## Nested paths
+
+`from:"Edges.Owner.Name"` never dereferences a nil pointer on the way: the field keeps its zero value instead. When the method returns an error and the type holding the pointer has a `<Name>OrErr() (*T, error)` accessor, as ent generates for every edge, the path is read through it, so an edge that wasn't loaded is reported as an error.
+
+## Errors
+
+A method may return `(T, error)`. It has to exactly when one of its conversions can fail (parsing, an enum switch without a default, a fallible converter, an `OrErr` edge), and the generator reports the mismatch either way. Errors from converters are returned unchanged.
+
+## Running the generator
+
+```
+mapper [-strict-enums] <package>
+```
+
+The generator loads `<package>`, finds every interface annotated with `// mapper:generate` and writes their implementations, `<Interface>Impl`, to `<package>/gen/gen.go` in package `gen`.
+
+| Flag | Effect |
+| --- | --- |
+| `-strict-enums` | fail instead of warning when a generated enum conversion can produce a value the target does not declare |
+
+The `example/` directory has a larger set of mapping interfaces with their generated code and tests.
+
+## License
+
+Apache License 2.0, see [LICENSE](LICENSE).

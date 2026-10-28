@@ -259,13 +259,15 @@ out, and a directive still takes over wherever the names do not line up.
 
 ## Custom Mappers
 
-To extend with custom type conversions:
+A function `func(SourceType) TargetType` or `func(SourceType) (TargetType, error)`
+needs no registration: reference it from a field with `using:`. `RegisterCustomMapper`
+adds a converter to the graph for every field of its types, but only in the process
+that runs the generator, so it takes effect in a generator binary of your own that
+imports this package, never from `init()` in the package being generated for.
 
-1. Define a function with signature `func(SourceType) TargetType` or `func(SourceType) (TargetType, error)`
-2. Register it in an `init()` function: `mapper.RegisterCustomMapper(YourFunction)`
-3. Reference it in field directives: `// field:MyField using:"yourpackage.YourFunction"`
-
-See `mapper/builtin.go` for examples of custom mapper registration.
+The builtin protobuf converters in `proto.go` go through `registerOptionalMapper`,
+which skips a converter whose types the module being generated cannot load, as
+`null.go` does for `volatiletech/null`. `RegisterCustomMapper` itself panics then.
 
 ## Example Structure
 
@@ -289,4 +291,7 @@ between runs.
 - Generated implementations are in a `gen` subdirectory by default (configurable via `NewGenerator()`)
 - The generator logs conversion chains for debugging (e.g., "converting X to Y using 2 converters")
 - Methods requiring error handling must have `error` as second return value
+- A method whose result is no struct, `ToViews([]*T) []*U` or an enum, converts its
+  single input as a whole (`generateConversionMethod`), its own converter taken out
+  of the graph meanwhile so that it never calls itself
 - Type graph enables powerful composition: define small mappers, tool chains them automatically
