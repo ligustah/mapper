@@ -257,17 +257,39 @@ func structFields(typ *GoType) []*GoField {
 	return typ.Fields
 }
 
+// sourceName is the path a target field is read from: its from: directive, or
+// else its own name, or else the name under the first mapper:inline sub-struct of
+// an input that has a field of it.
+func (m *Generator) sourceName(f *GoFunction, name string) string {
+	if options := f.options[name]; options != nil && options.from != "" {
+		return options.from
+	}
+
+	if len(f.inline) == 0 {
+		return name
+	}
+	if _, path, err := m.findField(f.inputs, name); err != nil || path != nil {
+		return name
+	}
+
+	for _, prefix := range f.inline {
+		if _, path, err := m.findField(f.inputs, prefix+"."+name); err == nil && path != nil {
+			return prefix + "." + name
+		}
+	}
+
+	return name
+}
+
 // resolveField finds the source for one output field and the generator that turns
 // it into the field's type. A nil mapping means the field is ignored.
 func (m *Generator) resolveField(f *GoFunction, field *GoField) (*ResolvedMapping, error) {
-	source := field.name
+	source := m.sourceName(f, field.name)
 
 	// apply output options
 	if options, ok := f.options[field.name]; ok {
 		if options.from == "-" {
 			return nil, nil
-		} else if options.from != "" {
-			source = options.from
 		}
 
 		// handle method: directive — call a named method on the source field value
@@ -405,10 +427,7 @@ func (m *Generator) buildEnumMapping(f *GoFunction, field *GoField, directive st
 		return nil, fmt.Errorf("map: %w", err)
 	}
 
-	source := field.name
-	if opts, ok := f.options[field.name]; ok && opts.from != "" {
-		source = opts.from
-	}
+	source := m.sourceName(f, field.name)
 
 	param, inputField, err := m.findField(f.inputs, source)
 	if err != nil {
@@ -635,10 +654,7 @@ func typeLiteral(typ *GoType, ref string) (jen.Code, error) {
 // field and registers the value-level type conversion in the graph so pointer fields can
 // automatically derive *T → *U from the same mapping without an explicit annotation.
 func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName string) (*ResolvedMapping, error) {
-	source := field.name
-	if opts, ok := f.options[field.name]; ok && opts.from != "" {
-		source = opts.from
-	}
+	source := m.sourceName(f, field.name)
 
 	var (
 		param     *GoParameter
@@ -925,10 +941,7 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 		}
 	} else {
 		// find the field and use it
-		source := field.name
-		if f.options[field.name] != nil && f.options[field.name].from != "" {
-			source = f.options[field.name].from
-		}
+		source := m.sourceName(f, field.name)
 
 		param, inputField, err := m.findField(f.inputs, source)
 		if err != nil {

@@ -213,6 +213,10 @@ func (m *RenamingMapperImpl) MapRenamedData(source *SourceRenamedData) *TargetRe
 }
 ```
 
+#### Flattening a sub-struct
+
+When the target spreads out what the source keeps in a nested struct, `// mapper:inline Report` replaces a `from:"Report.X"` line per field: a target field that no input has a field of its name for is read from `Report.<Name>`. Several names are tried in order, `// mapper:inline Report Host`, and the toggle may sit on the interface too. A pointer on the way is nil-checked as with any nested path, and a directive on the field still wins.
+
 ### 3. Ignoring Fields (`-` tag)
 
 Use the `// field:FieldName from:"-"` comment to explicitly ignore a field in the target struct, preventing it from being mapped.

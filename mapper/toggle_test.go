@@ -29,3 +29,21 @@ func TestSkipUnmatchedKeepsDirectivesStrict(t *testing.T) {
 		t.Fatalf("a directive naming a missing source should still fail, got %v", err)
 	}
 }
+
+func TestInline(t *testing.T) {
+	out := mustGenerate(t, "inline")
+
+	// Report comes first, and is a pointer: its fields are read behind a nil check
+	assertContains(t, method(t, out, "ToRevenue"),
+		"if in.Report != nil { tmp0 = in.Report.Total }",
+		"if in.Report != nil { tmp1 = in.Report.Count }",
+		"ID: in.ID",
+		"Name: in.Host.Name",
+	)
+
+	// on the interface, and a directive still wins over it
+	assertContains(t, method(t, out, "ToHostRevenue"),
+		"if in.Report != nil { tmp0 = in.Report.Count }",
+		"Name: in.Host.Name",
+	)
+}

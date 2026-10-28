@@ -211,7 +211,7 @@ func (m *Generator) hasSource(f *GoFunction, field *GoField) bool {
 		return true
 	}
 
-	_, path, err := m.findField(f.inputs, field.name)
+	_, path, err := m.findField(f.inputs, m.sourceName(f, field.name))
 
 	return err != nil || path != nil
 }
@@ -219,14 +219,9 @@ func (m *Generator) hasSource(f *GoFunction, field *GoField) bool {
 // sourceIsPointer reports whether the source field a plain mapping of field would
 // read is a pointer.
 func (m *Generator) sourceIsPointer(f *GoFunction, field *GoField) bool {
-	source := field.name
-	if options := f.options[field.name]; options != nil {
-		if options.from == "." || options.from == "-" {
-			return false
-		}
-		if options.from != "" {
-			source = options.from
-		}
+	source := m.sourceName(f, field.name)
+	if source == "." || source == "-" {
+		return false
 	}
 
 	_, path, err := m.findField(f.inputs, source)

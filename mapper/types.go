@@ -107,6 +107,9 @@ type GoFunction struct {
 	// skipUnmatched leaves every target field unset that has neither a directive
 	// nor a source field of its name, instead of failing
 	skipUnmatched bool
+	// inline names sub-structs of the inputs that a target field is looked up in
+	// when no input has a field of its name, in order
+	inline []string
 }
 
 type GoFieldPath []*GoField

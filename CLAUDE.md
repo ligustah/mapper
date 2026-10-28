@@ -162,6 +162,12 @@ either unset instead, struct targets and builders alike. A field whose source ex
 but cannot be converted, and a directive pointing at a missing source, still fail.
 Toggles are parsed by `applyToggle` in `parser.go`, a new one goes there.
 
+`// mapper:inline Report Host`, on a method or the interface, flattens sub-structs:
+a target field that no input has a field of its name for is read from
+`Report.<Name>`, then `Host.<Name>`, as if a `from:` said so, with the usual nil
+checks for a pointer on the way. A directive on the field still wins. Every field
+lookup goes through `Generator.sourceName`, which applies both.
+
 ### Nested Paths
 
 A `from:"Edges.Set.Name"` path that crosses a pointer never dereferences nil. When

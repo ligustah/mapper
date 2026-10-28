@@ -26,11 +26,19 @@ const (
 	// target field or setter unset that has neither a directive nor a source field
 	// of its name.
 	skipUnmatchedDirective = "mapper:skip-unmatched"
+	// inlineDirective, followed by the names of sub-structs such as `Report`, looks
+	// a target field up as `Report.<Name>` when no input has a field of its name.
+	inlineDirective = "mapper:inline"
 )
 
 // applyToggle sets the toggle a doc comment line names, and reports whether it
 // named one.
 func applyToggle(f *GoFunction, line string) bool {
+	if rest, ok := strings.CutPrefix(line, inlineDirective+" "); ok {
+		f.inline = append(f.inline, strings.Fields(rest)...)
+		return true
+	}
+
 	switch line {
 	case skipOptionalDirective:
 		f.skipOptional = true
