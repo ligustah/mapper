@@ -592,33 +592,55 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 		source = opts.from
 	}
 
-	param, inputField, err := m.findField(f.inputs, source)
-	if err != nil {
-		return nil, err
-	}
-	if inputField == nil {
-		return nil, fmt.Errorf("field %q not found in inputs", source)
+	var (
+		param     *GoParameter
+		inputPath GoFieldPath
+		srcType   *GoType
+		inputExpr *jen.Statement
+	)
+
+	if source == "." {
+		// the method of the first input that declares it
+		for _, input := range f.inputs {
+			if findMethod(input.typ, methodName) != nil {
+				param, srcType, inputExpr = input, input.typ, jen.Id(input.name)
+				break
+			}
+		}
+		if param == nil {
+			return nil, fmt.Errorf("method %q not found on any input", methodName)
+		}
+	} else {
+		var err error
+		param, inputPath, err = m.findField(f.inputs, source)
+		if err != nil {
+			return nil, err
+		}
+		if inputPath == nil {
+			return nil, fmt.Errorf("field %q not found in inputs", source)
+		}
+
+		srcType = inputPath.typ()
+		inputExpr = jen.Id(param.name).Op(".").Add(inputPath.id())
 	}
 
-	srcType := inputField.typ()
+	// a slice that does not declare the method itself has it called on every element
+	sliced := srcType.Kind == SliceKind && field.typ.Kind == SliceKind && findMethod(srcType, methodName) == nil
+
 	// dereference pointers to find the method
 	elemType := srcType
+	if sliced {
+		elemType = srcType.Element
+	}
 	if elemType.Kind == PointerKind {
 		elemType = elemType.Element
 	}
 
 	// validate the method exists and has the right signature
-	named, ok := elemType.Raw.(*types.Named)
-	if !ok {
+	if _, ok := elemType.Raw.(*types.Named); !ok {
 		return nil, fmt.Errorf("method: %q — source type %s is not a named type", methodName, elemType.Name)
 	}
-	var method *types.Func
-	for i := 0; i < named.NumMethods(); i++ {
-		if named.Method(i).Name() == methodName {
-			method = named.Method(i)
-			break
-		}
-	}
+	method := findMethod(elemType, methodName)
 	if method == nil {
 		return nil, fmt.Errorf("method %q not found on type %s", methodName, elemType.Name)
 	}
@@ -626,8 +648,9 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 	if sig.Params().Len() != 0 {
 		return nil, fmt.Errorf("method %q must take no parameters", methodName)
 	}
-	if sig.Results().Len() != 1 {
-		return nil, fmt.Errorf("method %q must return exactly one value", methodName)
+	hasError := sig.Results().Len() == 2 && isErrorType(sig.Results().At(1).Type())
+	if sig.Results().Len() != 1 && !hasError {
+		return nil, fmt.Errorf("method %q must return one value, or a value and an error", methodName)
 	}
 
 	resultGoType := getGoType(sig.Results().At(0).Type())
@@ -639,33 +662,88 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 			from: elemType,
 			to:   resultGoType,
 		},
-		generator: methodConverter(methodName, elemType, false),
+		generator: methodConverter(methodName, elemType, hasError),
+		canFail:   hasError,
 	})
-
-	inputExpr := jen.Id(param.name).Op(".").Add(inputField.id())
 
 	// Build the generator: if the source is *T, use nil-safe pointer wrapping.
 	// a method is called on the pointer itself inside the nil check, the value is
 	// never copied out of it
-	gen := methodConverter(methodName, elemType, false)
+	gen := methodConverter(methodName, elemType, hasError)
 	produces := resultGoType
 	switch {
-	case srcType.Kind == PointerKind && field.typ.Kind == PointerKind:
-		gen = derefGuard(jen.Op("*").Add(resultGoType.ref()), gen, true, false)
-		produces = resultGoType.pointer()
-	case srcType.Kind == PointerKind:
-		gen = derefGuard(resultGoType.ref(), gen, false, false)
+	case source == "." && len(f.inputs) == 1:
+		// a lone pointer input has been nil-checked when the method starts
+	case sliced:
+		elemGen, _ := liftMethodCall(srcType.Element, field.typ.Element, resultGoType, gen)
+		gen, produces = sliceMapping(field.typ.Element, elemGen), field.typ
+	default:
+		gen, produces = liftMethodCall(srcType, field.typ, resultGoType, gen)
 	}
 
-	gen, guardFails := guardPath(f, param, inputField, gen)
+	guardFails := false
+	if inputPath != nil {
+		gen, guardFails = guardPath(f, param, inputPath, gen)
+	}
 
 	return &ResolvedMapping{
 		output:    field,
 		input:     inputExpr,
 		generator: gen,
-		canFail:   guardFails,
+		canFail:   hasError || guardFails,
 		produces:  produces,
 	}, nil
+}
+
+// fitsInput reports whether a value of typ, or the value behind it, can be passed
+// as input.
+func fitsInput(typ, input *GoType) bool {
+	return assignableTo(typ.Raw, input.Raw) || (typ.Kind == PointerKind && assignableTo(typ.Element.Raw, input.Raw))
+}
+
+// liftCall fits a function of input that produces result to a source of type src:
+// a *T source of a T function is passed on behind a nil check, leaving a *U target
+// nil and a U target its zero value. It returns the generator and what it produces.
+func liftCall(src, dst, input, result *GoType, gen GeneratorFunc) (GeneratorFunc, *GoType) {
+	if src.Kind != PointerKind || input.Kind == PointerKind {
+		return gen, result
+	}
+
+	if dst.Kind == PointerKind {
+		return mapPointerToPointer(dst.Element, gen), result.pointer()
+	}
+
+	return mapPointerToValue(result, gen), result
+}
+
+// liftMethodCall fits a method call that turns src into result to a pointer source:
+// it runs only when src is not nil, and the result is the zero value otherwise, or
+// nil for a pointer target. It returns the generator and the type it produces.
+func liftMethodCall(src, dst, result *GoType, gen GeneratorFunc) (GeneratorFunc, *GoType) {
+	switch {
+	case src.Kind == PointerKind && dst.Kind == PointerKind:
+		return derefGuard(jen.Op("*").Add(result.ref()), gen, true, false), result.pointer()
+	case src.Kind == PointerKind:
+		return derefGuard(result.ref(), gen, false, false), result
+	}
+
+	return gen, result
+}
+
+// findMethod looks a method of typ up by name, through one pointer.
+func findMethod(typ *GoType, name string) *types.Func {
+	named := namedType(typ)
+	if named == nil {
+		return nil
+	}
+
+	for i := 0; i < named.NumMethods(); i++ {
+		if named.Method(i).Name() == name {
+			return named.Method(i)
+		}
+	}
+
+	return nil
 }
 
 // loadUsingPackage loads the package a `using:` reference points at. Loading happens
@@ -846,13 +924,18 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 	// case rather than calling through a raw pointer: a *U target stays nil, a U
 	// target keeps its zero value.
 	produces := getGoType(funcSig.Results().At(0).Type())
-	if sourceFieldType != nil && sourceFieldType.Kind == PointerKind && funcInputType.Kind != PointerKind {
-		if field.typ.Kind == PointerKind {
-			generator = mapPointerToPointer(field.typ.Element, generator)
-			produces = produces.pointer()
-		} else {
-			generator = mapPointerToValue(produces, generator)
-		}
+	switch {
+	case sourceFieldType == nil || assignableTo(sourceFieldType.Raw, funcInputType.Raw):
+	case sourceFieldType.Kind == SliceKind && field.typ.Kind == SliceKind && fitsInput(sourceFieldType.Element, funcInputType):
+		// a function of the element is applied to every element
+		elemGen, _ := liftCall(sourceFieldType.Element, field.typ.Element, funcInputType, produces, generator)
+		generator, produces = sliceMapping(field.typ.Element, elemGen), field.typ
+	case sourceFieldType.Kind == MapKind && field.typ.Kind == MapKind && fitsInput(sourceFieldType.Value, funcInputType) &&
+		types.AssignableTo(sourceFieldType.Key.Raw, field.typ.Key.Raw):
+		valueGen, _ := liftCall(sourceFieldType.Value, field.typ.Value, funcInputType, produces, generator)
+		generator, produces = mapMapping(field.typ.Key, field.typ.Value, identityMapping, valueGen), field.typ
+	default:
+		generator, produces = liftCall(sourceFieldType, field.typ, funcInputType, produces, generator)
 	}
 
 	guardFails := false

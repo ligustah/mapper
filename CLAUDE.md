@@ -170,7 +170,13 @@ In method doc comments:
 - `// field:TargetField using:"import/path.CustomFunc"` - Use a custom converter function
 - `// field:TargetField using:"CustomFunc"` - A bare name is a function of the interface's own package
 - `// field:TargetField using:"alias.CustomFunc"` - An import of the interface's file, by its local name
-- `// field:TargetField method:"MethodName"` - Call a no-argument method on the source value
+- `// field:TargetField method:"MethodName"` - Call a no-argument method on the source value,
+  which may return `(T, error)`; with `from:"."` it is called on the input itself
+
+A `using:` function or `method:` of the element type is applied to every element when
+the source and target are both slices (or, for `using:`, both maps with assignable
+keys) and the collection itself does not fit: `[]int` → `[]string` with
+`using:"Hex"` for a `func Hex(int) string`.
 - `// field:TargetField map:"a=X,b=Y"` - Map listed values explicitly (see below)
 
 ### Enum Mapping

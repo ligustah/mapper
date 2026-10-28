@@ -557,6 +557,18 @@ func (m *MyCustomMapperImpl) MapUser(source *UserSource) (*UserTarget, error) {
 }
 ```
 
+A function of an element type applies to each element: with `func Hex(int) string`, `using:"Hex"` maps `[]int` onto `[]string` and `map[string]int` onto `map[string]string`.
+
+#### Calling a method (`method` tag)
+
+`// field:Body method:"Decode"` calls a no-argument method on the source field, `Decode()` here. The method may return `(T, error)`, in which case the mapping method needs an error return. A pointer source is nil-checked first, a slice has the method called on every element, and `from:"."` calls it on the input itself:
+
+```go
+// field:Passed from:"." method:"Passed"
+// field:Body method:"Decode"
+ToResult(in *Probe) (*Result, error)
+```
+
 This feature provides a powerful way to extend the `mapper` tool's capabilities with your own domain-specific conversion logic.
 
 ### 10. Filling Builders

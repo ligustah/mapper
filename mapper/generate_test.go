@@ -1,9 +1,12 @@
 package mapper
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/tools/go/packages"
 )
 
 // generate runs the generator over the package in testdata/<name> and returns the
@@ -28,7 +31,8 @@ func generate(t *testing.T, name string) (string, error) {
 	return gen.String()
 }
 
-// mustGenerate is generate for a package that is expected to generate cleanly.
+// mustGenerate is generate for a package that is expected to generate cleanly. The
+// result is written to testdata/<name>/gen and has to type-check there.
 func mustGenerate(t *testing.T, name string) string {
 	t.Helper()
 
@@ -36,6 +40,24 @@ func mustGenerate(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatalf("generating %s: %v", name, err)
 	}
+
+	dir := filepath.Join("testdata", name, "gen")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "gen.go"), []byte(out), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkgs, err := packages.Load(&packages.Config{Mode: packages.NeedTypes, Dir: dir}, ".")
+	if err != nil {
+		t.Fatalf("loading generated %s: %v", name, err)
+	}
+	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
+		for _, e := range pkg.Errors {
+			t.Errorf("generated %s does not compile: %v\n%s", name, e, out)
+		}
+	})
 
 	return out
 }
