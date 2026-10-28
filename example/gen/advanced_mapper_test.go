@@ -441,6 +441,23 @@ func TestAdvancedMapper_FillEventSparse(t *testing.T) {
 	}
 }
 
+// TestAdvancedMapper_FillEventDraft covers a pointer source field of the setter's
+// own name: it goes through the nillable setter, so nil leaves the column unset
+func TestAdvancedMapper_FillEventDraft(t *testing.T) {
+	m := AdvancedMapperImpl{}
+
+	got := m.FillEventDraft(&protos.EventDraftProto{ID: "ev-1"}, models.NewEventCreate()).Values
+	if v, ok := got["note"]; ok {
+		t.Errorf("note should stay unset for a nil source, got %v", v)
+	}
+
+	note := "hi"
+	got = m.FillEventDraft(&protos.EventDraftProto{ID: "ev-1", Note: &note}, models.NewEventCreate()).Values
+	if got["note"] != "hi" || got["id"] != "ev-1" {
+		t.Errorf("columns mismatch: got %v", got)
+	}
+}
+
 // TestAdvancedMapper_MapTask covers enums paired by constant name across differing
 // underlying types, in both directions
 func TestAdvancedMapper_MapTask(t *testing.T) {

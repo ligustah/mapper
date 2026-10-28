@@ -162,3 +162,9 @@ type EventProto struct {
 	Deadline    *timestamppb.Timestamp
 	Note        string
 }
+
+// EventDraftProto carries an optional column as a pointer
+type EventDraftProto struct {
+	ID   string
+	Note *string
+}

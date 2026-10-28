@@ -144,7 +144,7 @@ func (m *Generator) generateBuilderMethod(mapperName string, f *GoFunction, targ
 		// a pointer source keeps its nil through the nillable setter rather than
 		// being flattened to a zero value
 		if bf.nillable != nil && m.sourceIsPointer(&src, field) {
-			field, setter = bf.nillable, bf.nillableSetter
+			field, setter = &GoField{name: field.name, typ: bf.nillable.typ}, bf.nillableSetter
 		}
 
 		mapping, err := m.resolveField(&src, field)

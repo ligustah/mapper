@@ -27,6 +27,16 @@ func (m AdvancedMapperImpl) FillEvent(src *protos.EventProto, b *models.EventCre
 	return b
 }
 
+func (m AdvancedMapperImpl) FillEventDraft(src *protos.EventDraftProto, b *models.EventCreate) *models.EventCreate {
+	if src == nil {
+		return b
+	}
+	b.SetID(src.ID)
+	b.SetNillableNote(src.Note)
+
+	return b
+}
+
 func (m AdvancedMapperImpl) FillEventSparse(src *protos.EventProto, b *models.EventCreate) *models.EventCreate {
 	if src == nil {
 		return b

@@ -160,4 +160,13 @@ type AdvancedMapper interface {
 	// field:At from:"AtNs" using:"FromNanos"
 	// field:CustomerID from:"OwnerId"
 	FillEventSparse(src *protos.EventProto, b *models.EventCreate) *models.EventCreate
+
+	// A pointer source field of the setter's own name goes to SetNillableNote, so a
+	// nil Note leaves the column unset.
+	// mapper:skip-optional
+	// field:At from:"-"
+	// field:Owner from:"-"
+	// field:Level from:"-"
+	// field:CustomerID from:"-"
+	FillEventDraft(src *protos.EventDraftProto, b *models.EventCreate) *models.EventCreate
 }
