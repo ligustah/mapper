@@ -96,6 +96,8 @@ underlying types, e.g. two separately declared `type X string`; both are integer
 any width, named or not, matching the builtin converters between unnamed integers;
 or the pair is `string` ↔ `[]byte`. This is narrower than `types.ConvertibleTo` on
 purpose: `int` ↔ `float64` or `string` ↔ `int` still need an explicit converter.
+`time.Duration` takes no part in any of these: a plain conversion would carry
+nanoseconds into an integer that usually counts seconds or milliseconds.
 
 ### Nil Pointers
 

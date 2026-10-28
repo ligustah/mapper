@@ -22,6 +22,7 @@ func TestIsDirectConversion(t *testing.T) {
 	storeStruct := named(storePkg, "Point", types.NewStruct(structFields, nil))
 
 	entCount := named(entPkg, "Count", types.Typ[types.Int64])
+	duration := named(types.NewPackage("time", "time"), "Duration", types.Typ[types.Int64])
 
 	tests := []struct {
 		name string
@@ -47,6 +48,9 @@ func TestIsDirectConversion(t *testing.T) {
 		{"named string to named int", entState, named(storePkg, "Code", types.Typ[types.Int]), false},
 		{"pointers to convertible types", types.NewPointer(entState), types.NewPointer(storeState), false},
 		{"unrelated named structs", entStruct, entCount, false},
+		{"duration to int64", duration, types.Typ[types.Int64], false},
+		{"int32 to duration", types.Typ[types.Int32], duration, false},
+		{"named int64 to duration", entCount, duration, false},
 		{"nil types", nil, storeState, false},
 	}
 

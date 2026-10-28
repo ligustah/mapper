@@ -1353,6 +1353,11 @@ func isDirectConversion(from, to types.Type) bool {
 		return false
 	}
 
+	// a Duration counts nanoseconds, an integer on the other side rarely does
+	if isDuration(from) || isDuration(to) {
+		return false
+	}
+
 	fromU, toU := from.Underlying(), to.Underlying()
 	if types.Identical(fromU, toU) {
 		return true
@@ -1363,6 +1368,10 @@ func isDirectConversion(from, to types.Type) bool {
 	}
 
 	return (isString(fromU) && isByteSlice(toU)) || (isByteSlice(fromU) && isString(toU))
+}
+
+func isDuration(typ types.Type) bool {
+	return types.TypeString(typ, nil) == "time.Duration"
 }
 
 func isInteger(typ types.Type) bool {
