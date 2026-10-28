@@ -9,12 +9,13 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// the module being generated may not use protobuf at all
 func init() {
-	RegisterCustomMapper[*timestamppb.Timestamp, time.Time]((*timestamppb.Timestamp).AsTime)
-	RegisterCustomMapper[time.Time, *timestamppb.Timestamp](timestamppb.New)
+	registerOptionalMapper[*timestamppb.Timestamp, time.Time]((*timestamppb.Timestamp).AsTime)
+	registerOptionalMapper[time.Time, *timestamppb.Timestamp](timestamppb.New)
 
-	RegisterCustomMapper[*durationpb.Duration, time.Duration]((*durationpb.Duration).AsDuration)
-	RegisterCustomMapper[time.Duration, *durationpb.Duration](durationpb.New)
+	registerOptionalMapper[*durationpb.Duration, time.Duration]((*durationpb.Duration).AsDuration)
+	registerOptionalMapper[time.Duration, *durationpb.Duration](durationpb.New)
 }
 
 func registerProtoEnum(generator *Generator, enum *GoType) {

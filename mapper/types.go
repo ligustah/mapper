@@ -257,7 +257,7 @@ func (g *GoType) getField(name string) (*GoField, error) {
 }
 
 func (g *GoType) zero() *jen.Statement {
-	if g.Kind == PointerKind {
+	if g.Kind == PointerKind || g.Kind == SliceKind || g.Kind == MapKind {
 		return jen.Nil()
 	}
 

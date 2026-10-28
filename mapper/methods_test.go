@@ -34,3 +34,20 @@ func TestMethodResultConverts(t *testing.T) {
 		"StopsAt: int32(in.Ceiling())",
 	)
 }
+
+// TestConversionMethod covers a method whose result is no struct: its input is
+// converted as a whole, through the interface's other methods but never itself.
+func TestConversionMethod(t *testing.T) {
+	out := mustGenerate(t, "convmethod")
+
+	views := method(t, out, "ToViews")
+	assertContains(t, views,
+		"func (m MapperImpl) ToViews(in []*convmethod.Item) []*convmethod.ItemView {",
+		"tmp0[i] = m.ToView(in[i])",
+		"return tmp0",
+	)
+	assertContains(t, method(t, out, "ToState"),
+		"case convmethod.StateOpen: tmp0 = convmethod.StateView_OPEN",
+		"return tmp0, nil",
+	)
+}

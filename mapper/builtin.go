@@ -142,21 +142,34 @@ type ConverterFunc[IN any, OUT any] interface {
 
 // RegisterCustomMapper allows users to register their own custom mapping functions.
 // The customMapperFunc must be a function with one input parameter and either one return value
-// or two return values (where the second is an error).
+// or two return values (where the second is an error). It panics if either type cannot be
+// loaded from the module the generator runs in.
 func RegisterCustomMapper[IN any, OUT any, Fn ConverterFunc[IN, OUT]](customMapperFunc Fn) {
+	if err := registerMapper[IN, OUT](customMapperFunc); err != nil {
+		panic(err)
+	}
+}
+
+// registerOptionalMapper is RegisterCustomMapper for a builtin whose types the module
+// being generated may not depend on, it is then left out.
+func registerOptionalMapper[IN any, OUT any, Fn ConverterFunc[IN, OUT]](mapperFunc Fn) {
+	_ = registerMapper[IN, OUT](mapperFunc)
+}
+
+func registerMapper[IN any, OUT any, Fn ConverterFunc[IN, OUT]](customMapperFunc Fn) error {
 	in := *(new(IN))
 	out := *(new(OUT))
 
 	// we need to get to the underlying type, but preserve the pointer for the lookup later on
 	inPtr := ""
-	inTyp := reflect.TypeOf(in)
+	inTyp := reflect.TypeOf(&in).Elem()
 	for inTyp.Kind() == reflect.Ptr {
 		inTyp = inTyp.Elem()
 		inPtr += "*"
 	}
 
 	outPtr := ""
-	outTyp := reflect.TypeOf(out)
+	outTyp := reflect.TypeOf(&out).Elem()
 	for outTyp.Kind() == reflect.Ptr {
 		outTyp = outTyp.Elem()
 		outPtr += "*"
@@ -170,12 +183,12 @@ func RegisterCustomMapper[IN any, OUT any, Fn ConverterFunc[IN, OUT]](customMapp
 
 	from, err := LookupType(fromTypeStr)
 	if err != nil {
-		panic(fmt.Errorf("failed to lookup fromType %s: %w", fromTypeStr, err))
+		return fmt.Errorf("failed to lookup fromType %s: %w", fromTypeStr, err)
 	}
 
 	to, err := LookupType(toTypeStr)
 	if err != nil {
-		panic(fmt.Errorf("failed to lookup toType %s: %w", toTypeStr, err))
+		return fmt.Errorf("failed to lookup toType %s: %w", toTypeStr, err)
 	}
 
 	hasError := fnType.NumOut() == 2
@@ -184,7 +197,7 @@ func RegisterCustomMapper[IN any, OUT any, Fn ConverterFunc[IN, OUT]](customMapp
 
 	_, pkgPath, typeName, methodName, _, err := splitPackageAndType(fnc.Name())
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	var fn GeneratorFunc
@@ -202,4 +215,6 @@ func RegisterCustomMapper[IN any, OUT any, Fn ConverterFunc[IN, OUT]](customMapp
 		generator: fn,
 		canFail:   hasError,
 	})
+
+	return nil
 }

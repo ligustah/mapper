@@ -1228,7 +1228,7 @@ func (m *Generator) generateMethod(mapperName string, f *GoFunction) error {
 	case to.Kind == StructKind:
 	case to.Kind == PointerKind && to.Element != nil && to.Element.Kind == StructKind:
 	default:
-		return errors.New("target type must be a struct or a pointer to a struct")
+		return m.generateConversionMethod(mapperName, f)
 	}
 
 	resolved, err := m.buildMapping(f, structFields(to))
@@ -1242,6 +1242,63 @@ func (m *Generator) generateMethod(mapperName string, f *GoFunction) error {
 	}
 
 	m.file.Add(m.renderMethod(mapperName, f, resolved, canFail))
+
+	return nil
+}
+
+// generateConversionMethod emits a method whose result is no struct, a slice or an
+// enum for instance: its single input is converted as a whole, as a field of that
+// type would be.
+func (m *Generator) generateConversionMethod(mapperName string, f *GoFunction) error {
+	if len(f.inputs) != 1 {
+		return errors.New("target type must be a struct or a pointer to a struct, or the method needs a single input that converts to it")
+	}
+	input := f.inputs[0]
+
+	// the method is a converter of its own pair, it must not be built out of itself
+	for _, s := range m.scoped {
+		if s.mapping.types.from == input.typ && s.mapping.types.to == f.output {
+			m.graph.restore(s.mapping, s.prev)
+			defer m.graph.add(s.mapping)
+		}
+	}
+
+	gen, canFail := m.buildGenerator(input.typ, f.output)
+	if gen == nil {
+		return fmt.Errorf("cannot convert %s to %s", input.typ, f.output)
+	}
+
+	if canFail && !f.hasError {
+		return errors.New("at least one converter can fail, function needs to return error")
+	} else if !canFail && f.hasError {
+		return errors.New("no converter can fail, function can never return error")
+	}
+
+	name := input.name
+	if name == "" {
+		name = "input0"
+	}
+
+	body := jen.Empty()
+	ctx := &FunctionContext{body: body, targetType: f.output, canFail: canFail}
+	result := gen(ctx, jen.Id(name))
+	if f.hasError {
+		result = jen.List(result, jen.Nil())
+	}
+
+	returnType := f.output.ref()
+	if f.hasError {
+		returnType = jen.Parens(jen.List(returnType, jen.Id("error")))
+	}
+
+	function := jen.Func().Params(jen.Id("m").Id(mapperName)).Id(f.name).Params(inputParams(f)...).Add(returnType)
+	if body.GoString() == "" {
+		function.Block(jen.Return(result)).Line()
+	} else {
+		function.Block(body, jen.Return(result)).Line()
+	}
+
+	m.file.Add(function)
 
 	return nil
 }
