@@ -152,6 +152,10 @@ type FieldOptions struct {
 	using   string
 	method  string
 	mapping string
+	// fallback is the value of a `default:` directive, what a nil pointer source gives
+	fallback string
+	// zeroNil is a `zero:"nil"` directive: a zero source gives a nil pointer target
+	zeroNil bool
 }
 
 type GoKind int

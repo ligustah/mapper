@@ -142,8 +142,12 @@ func (m *Generator) generateBuilderMethod(mapperName string, f *GoFunction, targ
 		}
 
 		// a pointer source keeps its nil through the nillable setter rather than
-		// being flattened to a zero value
-		if bf.nillable != nil && m.sourceIsPointer(&src, field) {
+		// being flattened to a zero value, unless a default: stands in for nil; and
+		// a zero:"nil" field hands the nillable setter its nil
+		options := f.options[field.name]
+		hasFallback := options != nil && options.fallback != ""
+		zeroNil := options != nil && options.zeroNil
+		if bf.nillable != nil && (zeroNil || (!hasFallback && m.sourceIsPointer(&src, field))) {
 			field, setter = &GoField{name: field.name, typ: bf.nillable.typ}, bf.nillableSetter
 		}
 

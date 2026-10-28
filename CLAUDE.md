@@ -208,12 +208,23 @@ In method doc comments:
 - `// field:TargetField method:"MethodName"` - Call a no-argument method on the source value,
   which may return `(T, error)`; with `from:"."` it is called on the input itself
 - `// field:TargetField map:"a=X,b=Y"` - Map listed values explicitly (see below)
+- `// field:TargetField default:"X"` - What a nil pointer source gives instead of the zero value
+- `// field:TargetField zero:"nil"` - A zero source value leaves a pointer field nil
 
 A `using:` function or `method:` of the element type is applied to every element when
 the source and target are both slices, or to every value when both are maps with
 assignable keys, and the collection itself does not fit: `[]int` → `[]string` with
 `using:"Hex"` for a `func Hex(int) string`. A result that is a pointer already is
 kept as it is for a `*T` → `*U` field, not addressed a second time.
+
+`default:` and `zero:"nil"` live in `optional.go`. `default:"X"` needs a pointer
+source and a value field, X is resolved like a `map:` side (`resolveEnumRef`), and
+the field is initialised to it before the nil check. `zero:"nil"` needs a value
+source and a pointer field, the conversion only runs when the source is not its zero
+value, through `IsZero()` where the type has it, else a comparison, which rules out
+types that are not comparable. Both go with plain fields, `using:`, `method:` and
+builder setters (`zero:"nil"` picks `SetNillableX`, `default:` keeps `SetX`), and are
+rejected element by element, on `from:"."` and next to `map:`.
 
 ### Enum Mapping
 

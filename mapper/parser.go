@@ -259,6 +259,15 @@ func (p *Parser) getGoFunction(method *types.Func, f funcDoc, pkg string, import
 				goFunc.options[fieldName].using = qualifyReference(tag.Get("using"), pkg, imports)
 				goFunc.options[fieldName].method = tag.Get("method")
 				goFunc.options[fieldName].mapping = tag.Get("map")
+				goFunc.options[fieldName].fallback = tag.Get("default")
+
+				switch zero, ok := tag.Lookup("zero"); {
+				case !ok:
+				case zero == "nil":
+					goFunc.options[fieldName].zeroNil = true
+				default:
+					return nil, fmt.Errorf("field %s: zero:%q, the only form is zero:\"nil\"", fieldName, zero)
+				}
 			}
 		}
 	}

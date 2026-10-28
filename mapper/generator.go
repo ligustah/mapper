@@ -333,6 +333,9 @@ func (m *Generator) resolveField(f *GoFunction, field *GoField) (*ResolvedMappin
 		}
 
 		// handle map: directive — switch over explicitly listed values
+		if options.mapping != "" && (options.fallback != "" || options.zeroNil) {
+			return nil, fmt.Errorf("field %s: map: takes no default: or zero:, give the switch a *=X entry instead", field.name)
+		}
 		if options.mapping != "" {
 			mapping, err := m.buildEnumMapping(f, field, options.mapping)
 			if err != nil {
@@ -360,6 +363,10 @@ func (m *Generator) resolveField(f *GoFunction, field *GoField) (*ResolvedMappin
 	found := source == "."
 
 	if source == "." {
+		if err := rejectOptional(f, field); err != nil {
+			return nil, fmt.Errorf("field %s: %w", field.name, err)
+		}
+
 		// special case of referring directly to the input type. An input that
 		// converts as a whole wins over one taken apart field by field.
 		for _, derive := range []bool{false, true} {
@@ -394,7 +401,10 @@ func (m *Generator) resolveField(f *GoFunction, field *GoField) (*ResolvedMappin
 		// see if the input contains our output, otherwise continue
 		found = true
 
-		generator, canFail := m.buildGenerator(inputField.typ(), field.typ)
+		generator, canFail, err := m.buildFieldGenerator(f, field, inputField.typ())
+		if err != nil {
+			return nil, fmt.Errorf("field %s: %w", field.name, err)
+		}
 		if generator != nil {
 			guarded, guardFails := guardPath(f, param, inputField, generator)
 			mapping = &ResolvedMapping{
@@ -412,7 +422,11 @@ func (m *Generator) resolveField(f *GoFunction, field *GoField) (*ResolvedMappin
 	if input := namedInput(f, source); mapping == nil && !found && input != nil {
 		found = true
 
-		if generator, canFail := m.buildGenerator(input.typ, field.typ); generator != nil {
+		generator, canFail, err := m.buildFieldGenerator(f, field, input.typ)
+		if err != nil {
+			return nil, fmt.Errorf("field %s: %w", field.name, err)
+		}
+		if generator != nil {
 			mapping = &ResolvedMapping{
 				output:    field,
 				input:     jen.Id(input.name),
@@ -497,12 +511,12 @@ func (m *Generator) buildEnumMapping(f *GoFunction, field *GoField, directive st
 	for _, entry := range entries {
 		fromCode, fromConst, err := m.resolveEnumRef(srcElem, entry.from, "source")
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("map: %w", err)
 		}
 
 		toCode, _, err := m.resolveEnumRef(dstElem, entry.to, "target")
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("map: %w", err)
 		}
 
 		if fromConst != "" {
@@ -515,7 +529,7 @@ func (m *Generator) buildEnumMapping(f *GoFunction, field *GoField, directive st
 	var fallback jen.Code
 	if fallbackRef != "" {
 		if fallback, _, err = m.resolveEnumRef(dstElem, fallbackRef, "target"); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("map: %w", err)
 		}
 	}
 
@@ -570,13 +584,13 @@ func (m *Generator) resolveEnumRef(typ *GoType, ref string, side string) (jen.Co
 	}
 
 	if isEnum {
-		return nil, "", fmt.Errorf("map: %s %q is neither the name nor the value of a constant of %s, declared are: %s",
+		return nil, "", fmt.Errorf("%s %q is neither the name nor the value of a constant of %s, declared are: %s",
 			side, ref, typ, strings.Join(enumConstantNames(typ.Raw), ", "))
 	}
 
 	literal, err := typeLiteral(typ, ref)
 	if err != nil {
-		return nil, "", fmt.Errorf("map: %s %q: %w", side, ref, err)
+		return nil, "", fmt.Errorf("%s %q: %w", side, ref, err)
 	}
 
 	return literal, "", nil
@@ -797,19 +811,42 @@ func (m *Generator) buildMethodMapping(f *GoFunction, field *GoField, methodName
 	switch {
 	case source == "." && len(f.inputs) == 1:
 		// a lone pointer input has been nil-checked when the method starts
+		if err := rejectOptional(f, field); err != nil {
+			return nil, err
+		}
 		gen, produces, convertFails = m.convertResult(gen, resultGoType, field.typ, false)
 	case sliced:
+		if err := rejectOptional(f, field); err != nil {
+			return nil, err
+		}
 		elemGen, result, fails := m.convertResult(gen, resultGoType, field.typ.Element, srcType.Element.Kind == PointerKind)
 		elemGen, _ = liftMethodCall(srcType.Element, field.typ.Element, result, elemGen)
 		gen, produces, convertFails = sliceMapping(field.typ.Element, elemGen), field.typ, fails
 	case mapped:
+		if err := rejectOptional(f, field); err != nil {
+			return nil, err
+		}
 		valueGen, result, fails := m.convertResult(gen, resultGoType, field.typ.Value, srcType.Value.Kind == PointerKind)
 		valueGen, _ = liftMethodCall(srcType.Value, field.typ.Value, result, valueGen)
 		gen, produces, convertFails = mapMapping(field.typ.Key, field.typ.Value, identityMapping, valueGen), field.typ, fails
 	default:
+		fallback, err := m.fallbackValue(f, field, srcType)
+		if err != nil {
+			return nil, err
+		}
+
 		var result *GoType
 		gen, result, convertFails = m.convertResult(gen, resultGoType, field.typ, srcType.Kind == PointerKind)
-		gen, produces = liftMethodCall(srcType, field.typ, result, gen)
+		if fallback != nil {
+			// the method is called on the pointer itself, inside the nil check
+			gen = mapPointerToValueOr(field.typ, fallback, gen, false)
+		} else {
+			gen, produces = liftMethodCall(srcType, field.typ, result, gen)
+		}
+
+		if gen, err = zeroToNil(f, field, srcType, field.typ, produces, gen); err != nil {
+			return nil, err
+		}
 	}
 
 	guardFails := false
@@ -1084,18 +1121,44 @@ func (m *Generator) buildUsingMapping(f *GoFunction, field *GoField, using strin
 	// case rather than calling through a raw pointer: a *U target stays nil, a U
 	// target keeps its zero value.
 	produces := getGoType(funcSig.Results().At(0).Type())
+	whole := sourceFieldType == nil || assignableTo(sourceFieldType.Raw, funcInputType.Raw)
 	switch {
-	case sourceFieldType == nil || assignableTo(sourceFieldType.Raw, funcInputType.Raw):
-	case sourceFieldType.Kind == SliceKind && field.typ.Kind == SliceKind && fitsInput(sourceFieldType.Element, funcInputType):
+	case !whole && sourceFieldType.Kind == SliceKind && field.typ.Kind == SliceKind && fitsInput(sourceFieldType.Element, funcInputType):
 		// a function of the element is applied to every element
+		if err := rejectOptional(f, field); err != nil {
+			return nil, err
+		}
 		elemGen, _ := liftCall(sourceFieldType.Element, field.typ.Element, funcInputType, produces, generator)
 		generator, produces = sliceMapping(field.typ.Element, elemGen), field.typ
-	case sourceFieldType.Kind == MapKind && field.typ.Kind == MapKind && fitsInput(sourceFieldType.Value, funcInputType) &&
+	case !whole && sourceFieldType.Kind == MapKind && field.typ.Kind == MapKind && fitsInput(sourceFieldType.Value, funcInputType) &&
 		types.AssignableTo(sourceFieldType.Key.Raw, field.typ.Key.Raw):
+		if err := rejectOptional(f, field); err != nil {
+			return nil, err
+		}
 		valueGen, _ := liftCall(sourceFieldType.Value, field.typ.Value, funcInputType, produces, generator)
 		generator, produces = mapMapping(field.typ.Key, field.typ.Value, identityMapping, valueGen), field.typ
+	case sourceFieldType == nil:
+		if err := rejectOptional(f, field); err != nil {
+			return nil, err
+		}
 	default:
-		generator, produces = liftCall(sourceFieldType, field.typ, funcInputType, produces, generator)
+		fallback, err := m.fallbackValue(f, field, sourceFieldType)
+		if err != nil {
+			return nil, err
+		}
+
+		switch {
+		case fallback != nil && whole:
+			return nil, errors.New("default: the function takes the pointer itself, so it decides what nil gives")
+		case fallback != nil:
+			generator = mapPointerToValueOr(field.typ, fallback, generator, true)
+		case !whole:
+			generator, produces = liftCall(sourceFieldType, field.typ, funcInputType, produces, generator)
+		}
+
+		if generator, err = zeroToNil(f, field, sourceFieldType, field.typ, produces, generator); err != nil {
+			return nil, err
+		}
 	}
 
 	guardFails := false

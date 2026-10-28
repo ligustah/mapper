@@ -196,6 +196,8 @@ Directives are comments on an interface method, one per target field: `// field:
 | `using:"Func"` | convert with a function, see [Custom converters](#custom-converters) |
 | `method:"Name"` | call a method on the source value, see below |
 | `map:"a=X,b=Y,*=Z"` | map listed values explicitly, see [Enums](#enums) |
+| `default:"X"` | what a nil pointer source gives instead of the zero value, see below |
+| `zero:"nil"` | a zero source value gives a nil pointer field, see below |
 
 `method:"Decode"` calls a method without arguments on the source field. It may return `(T, error)`. A pointer source is nil-checked first, a slice or map has the method called on every element or value, and the result is converted to the field's type like any value. With `from:"."` the method is called on the input itself:
 
@@ -204,6 +206,39 @@ Directives are comments on an interface method, one per target field: `// field:
 // field:Passed from:"." method:"Passed"
 ToResult(in *Probe) (*Result, error)
 ```
+
+### Nil and zero values
+
+A nil pointer source gives the zero value of a value field. `default:"X"` gives `X` instead, a constant of the field's type by name or value, or a literal (strings, numbers, `true`/`false`). The other way round, a pointer field filled from a value is always set, and `zero:"nil"` leaves it nil when the source is its zero value; a type with an `IsZero()` method, like `time.Time`, is asked through it. Both work with `using:` and `method:` too, and on builders, where `zero:"nil"` goes through `SetNillableX`:
+
+```go
+// field:Share default:"true"
+// field:Kind default:"KindDir"
+// field:At zero:"nil"
+// field:Created using:"Unix" zero:"nil"
+ToRow(in *Settings) *Row
+```
+
+```go
+var tmp0 bool = true
+if tmp1 := in.Share; tmp1 != nil {
+	tmp2 := *tmp1
+	tmp0 = tmp2
+}
+...
+var tmp6 *time.Time
+if !in.At.IsZero() {
+	tmp7 := in.At
+	tmp6 = &tmp7
+}
+var tmp8 *time.Time
+if in.Created != 0 {
+	tmp9 := mapping.Unix(in.Created)
+	tmp8 = &tmp9
+}
+```
+
+They apply to a single source field, not element by element, and not together with `map:`, whose `*=X` entry plays the part of a default.
 
 ## Toggles
 
