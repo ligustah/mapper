@@ -135,6 +135,14 @@ on a method or on the whole interface: an optional setter, one with a
 `SetNillableX` twin, that has neither a directive nor a source field of its name is
 then left unset. Required setters still fail.
 
+### Unmatched Fields
+
+By default every target field needs a source or a directive. `// mapper:skip-unmatched`,
+on a method or on the whole interface, leaves any field or builder setter without
+either unset instead, struct targets and builders alike. A field whose source exists
+but cannot be converted, and a directive pointing at a missing source, still fail.
+Toggles are parsed by `applyToggle` in `parser.go`, a new one goes there.
+
 ### Nested Paths
 
 A `from:"Edges.Set.Name"` path that crosses a pointer never dereferences nil. When

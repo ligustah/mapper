@@ -18,9 +18,30 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// skipOptionalDirective, on an interface or one of its methods, leaves a builder's
-// optional setters unset when no source field has their name.
-const skipOptionalDirective = "mapper:skip-optional"
+const (
+	// skipOptionalDirective, on an interface or one of its methods, leaves a builder's
+	// optional setters unset when no source field has their name.
+	skipOptionalDirective = "mapper:skip-optional"
+	// skipUnmatchedDirective, on an interface or one of its methods, leaves every
+	// target field or setter unset that has neither a directive nor a source field
+	// of its name.
+	skipUnmatchedDirective = "mapper:skip-unmatched"
+)
+
+// applyToggle sets the toggle a doc comment line names, and reports whether it
+// named one.
+func applyToggle(f *GoFunction, line string) bool {
+	switch line {
+	case skipOptionalDirective:
+		f.skipOptional = true
+	case skipUnmatchedDirective:
+		f.skipUnmatched = true
+	default:
+		return false
+	}
+
+	return true
+}
 
 type Parser struct{}
 
@@ -129,13 +150,14 @@ func (p *Parser) parsePackage(pkg *packages.Package) []*GoInterface {
 			if iface, ok := typ.Underlying().(*types.Interface); ok {
 				interfaceDocs := docs[typ.Obj().Name()]
 
-				hasGenerateDirective, skipOptional := false, false
+				hasGenerateDirective := false
+				var toggles []string
 				for _, line := range strings.Split(interfaceDocs.doc, "\n") {
-					switch strings.TrimSpace(line) {
+					switch line = strings.TrimSpace(line); line {
 					case "mapper:generate":
 						hasGenerateDirective = true
-					case skipOptionalDirective:
-						skipOptional = true
+					default:
+						toggles = append(toggles, line)
 					}
 				}
 
@@ -152,7 +174,9 @@ func (p *Parser) parsePackage(pkg *packages.Package) []*GoInterface {
 						if err != nil {
 							log.Fatal(err)
 						}
-						goFunc.skipOptional = goFunc.skipOptional || skipOptional
+						for _, toggle := range toggles {
+							applyToggle(goFunc, toggle)
+						}
 
 						goIface.Methods = append(goIface.Methods, goFunc)
 					}
@@ -206,8 +230,7 @@ func (p *Parser) getGoFunction(method *types.Func, f funcDoc, pkg string, import
 	for _, s := range f.doc {
 		trimmed := strings.TrimSpace(s)
 
-		if trimmed == "// "+skipOptionalDirective {
-			goFunc.skipOptional = true
+		if toggle, ok := strings.CutPrefix(trimmed, "// "); ok && applyToggle(goFunc, strings.TrimSpace(toggle)) {
 			continue
 		}
 

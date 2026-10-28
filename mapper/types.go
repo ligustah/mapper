@@ -101,6 +101,9 @@ type GoFunction struct {
 	// skipOptional leaves a builder's optional setters unset when no source field
 	// has their name, instead of failing
 	skipOptional bool
+	// skipUnmatched leaves every target field unset that has neither a directive
+	// nor a source field of its name, instead of failing
+	skipUnmatched bool
 }
 
 type GoFieldPath []*GoField

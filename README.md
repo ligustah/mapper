@@ -248,6 +248,16 @@ func (m *IgnoringMapperImpl) MapIgnoredData(source *SourceIgnoredData) *TargetIg
 }
 ```
 
+A target with many fields the source does not carry, ent's `Edges` or an ID the database assigns, can drop them all at once. Put `// mapper:skip-unmatched` on the method, or on the interface to cover all of its methods. A field or builder setter with neither a directive nor a source field of its name is then left unset, rather than reported. A field whose source exists but cannot be converted, and a directive naming a source that does not exist, still fail.
+
+```go
+// mapper:generate
+// mapper:skip-unmatched
+type RowMapper interface {
+	Row(in *proto.Commit) *ent.Commit // Edges, CreatedAt, ... stay zero
+}
+```
+
 ### 4. Pointer Conversions
 
 The tool can handle conversions between pointer and non-pointer types automatically, including dereferencing and taking addresses as needed.

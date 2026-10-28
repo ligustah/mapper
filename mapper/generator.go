@@ -277,6 +277,7 @@ func (m *Generator) resolveField(f *GoFunction, field *GoField) (*ResolvedMappin
 
 	// resolve the output
 	var mapping *ResolvedMapping
+	found := source == "."
 
 	if source == "." {
 		// special case of referring directly to the input type
@@ -297,6 +298,7 @@ func (m *Generator) resolveField(f *GoFunction, field *GoField) (*ResolvedMappin
 		return nil, fmt.Errorf("field %s: %w", field.name, err)
 	} else if inputField != nil {
 		// see if the input contains our output, otherwise continue
+		found = true
 
 		generator, canFail := m.buildGenerator(inputField.typ(), field.typ)
 		if generator != nil {
@@ -326,6 +328,10 @@ func (m *Generator) resolveField(f *GoFunction, field *GoField) (*ResolvedMappin
 				break
 			}
 		}
+	}
+
+	if mapping == nil && !found && f.skipUnmatched && f.options[field.name] == nil {
+		return nil, nil
 	}
 
 	if mapping == nil {
