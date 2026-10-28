@@ -7,10 +7,12 @@ import (
 	"github.com/dave/jennifer/jen"
 )
 
-// derivedHelpers tracks the struct conversions derived for one interface.
+// derivedHelpers tracks the struct conversions derived for one interface. Their
+// code is only added to the file once the interface is complete.
 type derivedHelpers struct {
 	names  map[string]bool
 	failed map[string]bool
+	code   []jen.Code
 }
 
 func newDerivedHelpers() derivedHelpers {
@@ -68,8 +70,9 @@ func (m *Generator) deriveStruct(from, to *GoType) (GeneratorFunc, bool) {
 		skipUnmatched: m.iface.skipUnmatched,
 	}
 
-	// enum problems found on an attempt that is given up on are no problems
-	problemsBefore := len(m.enumProblems)
+	// what an attempt that is given up on leaves behind is taken back with it:
+	// enum problems, and helpers derived on the way, which may call this one
+	problemsBefore, scopedBefore, codeBefore := len(m.enumProblems), len(m.scoped), len(m.derived.code)
 
 	resolved, err := m.buildMapping(fn, to.Fields)
 	if err == nil && anyCanFail(resolved) {
@@ -81,6 +84,8 @@ func (m *Generator) deriveStruct(from, to *GoType) (GeneratorFunc, bool) {
 
 	if err != nil {
 		m.enumProblems = m.enumProblems[:problemsBefore]
+		m.unscope(scopedBefore)
+		m.derived.code = m.derived.code[:codeBefore]
 		m.graph.restore(mapping, prev)
 		m.derived.failed[pair.String()] = true
 		log.Printf("not deriving %s to %s: %v", from, to, err)
@@ -88,12 +93,12 @@ func (m *Generator) deriveStruct(from, to *GoType) (GeneratorFunc, bool) {
 		return nil, false
 	}
 
-	m.scoped = append(m.scoped, scopedMapping{mapping: mapping, prev: prev})
+	m.scoped = append(m.scoped, scopedMapping{mapping: mapping, prev: prev, helper: name})
 	m.derived.names[name] = true
 	fn.hasError = mapping.canFail
 
 	log.Printf("converting %s to %s field by field, with %s", from, to, name)
-	m.renderMethod(m.implName, fn, resolved, mapping.canFail)
+	m.derived.code = append(m.derived.code, m.renderMethod(m.implName, fn, resolved, mapping.canFail))
 
 	return mapping.generator, mapping.canFail
 }

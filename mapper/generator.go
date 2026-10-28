@@ -77,12 +77,24 @@ type Generator struct {
 type scopedMapping struct {
 	mapping *TypeMapping
 	prev    *TypeMapping
+	// helper is the derived helper behind mapping, if it is one
+	helper string
 }
 
 // addScoped adds a mapping that is taken back once the interface is generated.
 func (m *Generator) addScoped(mapping *TypeMapping) {
 	m.mappings[mapping.types.String()] = mapping
 	m.scoped = append(m.scoped, scopedMapping{mapping: mapping, prev: m.graph.add(mapping)})
+}
+
+// unscope takes back the scoped mappings from index mark on, latest first,
+// together with the helpers derived for them.
+func (m *Generator) unscope(mark int) {
+	for i := len(m.scoped) - 1; i >= mark; i-- {
+		m.graph.restore(m.scoped[i].mapping, m.scoped[i].prev)
+		delete(m.derived.names, m.scoped[i].helper)
+	}
+	m.scoped = m.scoped[:mark]
 }
 
 func (m *Generator) SetSrcDir(dir string) {
@@ -110,10 +122,8 @@ func (m *Generator) GenerateInterface(in *GoInterface) error {
 	// methods of this interface's implementation are no converters for the next one
 	m.iface, m.implName, m.derived = in, name, newDerivedHelpers()
 	defer func() {
-		for i := len(m.scoped) - 1; i >= 0; i-- {
-			m.graph.restore(m.scoped[i].mapping, m.scoped[i].prev)
-		}
-		m.iface, m.implName, m.scoped = nil, "", nil
+		m.unscope(0)
+		m.iface, m.implName = nil, ""
 	}()
 
 	// add type mappings
@@ -151,6 +161,9 @@ func (m *Generator) GenerateInterface(in *GoInterface) error {
 		return fmt.Errorf("incompatible enums in %s:\n\t%s", in.Name, strings.Join(found, "\n\t"))
 	}
 
+	for _, helper := range m.derived.code {
+		m.file.Add(helper)
+	}
 	m.file.Add(mapperStruct)
 	m.file.Add(typeCheck)
 
@@ -1165,13 +1178,13 @@ func (m *Generator) generateMethod(mapperName string, f *GoFunction) error {
 		return err
 	}
 
-	m.renderMethod(mapperName, f, resolved, canFail)
+	m.file.Add(m.renderMethod(mapperName, f, resolved, canFail))
 
 	return nil
 }
 
-// renderMethod emits a method returning a struct built from resolved.
-func (m *Generator) renderMethod(mapperName string, f *GoFunction, resolved []*ResolvedMapping, canFail bool) {
+// renderMethod renders a method returning a struct built from resolved.
+func (m *Generator) renderMethod(mapperName string, f *GoFunction, resolved []*ResolvedMapping, canFail bool) jen.Code {
 	to := f.output
 
 	returnType := jen.Empty()
@@ -1217,12 +1230,10 @@ func (m *Generator) renderMethod(mapperName string, f *GoFunction, resolved []*R
 	}
 
 	if body.GoString() == "" {
-		function.Block(jen.Return(returnValue)).Line()
-	} else {
-		function.Block(body, jen.Return(returnValue)).Line()
+		return function.Block(jen.Return(returnValue)).Line()
 	}
 
-	m.file.Add(function)
+	return function.Block(body, jen.Return(returnValue)).Line()
 }
 
 // checkCanFail reports whether any mapping can fail and verifies that the method's

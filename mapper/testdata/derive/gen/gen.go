@@ -7,49 +7,6 @@ import (
 	"strconv"
 )
 
-func (m MapperImpl) mapGoalToGoalProto(in derive.Goal) derive.GoalProto {
-	return derive.GoalProto{
-		Kind:  in.Kind,
-		Count: int32(in.Count),
-	}
-}
-
-func (m MapperImpl) mapNodeToNodeProto(in derive.Node) derive.NodeProto {
-	tmp0 := make([]*derive.NodeProto, len(in.Children))
-	for i := range in.Children {
-		var tmp1 *derive.NodeProto
-		if tmp2 := in.Children[i]; tmp2 != nil {
-			tmp3 := *tmp2
-			tmp4 := m.mapNodeToNodeProto(tmp3)
-			tmp1 = &tmp4
-		}
-		tmp0[i] = tmp1
-	}
-
-	return derive.NodeProto{
-		Name:     in.Name,
-		Children: tmp0,
-	}
-}
-
-func (m MapperImpl) mapPlanToHostKey(in derive.Plan) derive.HostKey {
-	return derive.HostKey{
-		Host: in.Host,
-		Port: int32(in.Port),
-	}
-}
-
-func (m MapperImpl) mapPlanToSized(in derive.Plan) (derive.Sized, error) {
-	tmp0, err := strconv.ParseInt(in.Size, 10, 64)
-	if err != nil {
-		return derive.Sized{}, err
-	}
-
-	return derive.Sized{
-		Size: int(tmp0),
-	}, nil
-}
-
 func (m MapperImpl) ToProto(in *derive.Plan) (*derive.PlanProto, error) {
 	if in == nil {
 		return nil, nil
@@ -99,16 +56,52 @@ func (m MapperImpl) ToProto(in *derive.Plan) (*derive.PlanProto, error) {
 	}, nil
 }
 
-type MapperImpl struct{}
-
-var _ derive.Mapper = (*MapperImpl)(nil)
-
-func (m OtherImpl) mapGoalToGoalProto(in derive.Goal) derive.GoalProto {
+func (m MapperImpl) mapGoalToGoalProto(in derive.Goal) derive.GoalProto {
 	return derive.GoalProto{
 		Kind:  in.Kind,
 		Count: int32(in.Count),
 	}
 }
+
+func (m MapperImpl) mapNodeToNodeProto(in derive.Node) derive.NodeProto {
+	tmp0 := make([]*derive.NodeProto, len(in.Children))
+	for i := range in.Children {
+		var tmp1 *derive.NodeProto
+		if tmp2 := in.Children[i]; tmp2 != nil {
+			tmp3 := *tmp2
+			tmp4 := m.mapNodeToNodeProto(tmp3)
+			tmp1 = &tmp4
+		}
+		tmp0[i] = tmp1
+	}
+
+	return derive.NodeProto{
+		Name:     in.Name,
+		Children: tmp0,
+	}
+}
+
+func (m MapperImpl) mapPlanToHostKey(in derive.Plan) derive.HostKey {
+	return derive.HostKey{
+		Host: in.Host,
+		Port: int32(in.Port),
+	}
+}
+
+func (m MapperImpl) mapPlanToSized(in derive.Plan) (derive.Sized, error) {
+	tmp0, err := strconv.ParseInt(in.Size, 10, 64)
+	if err != nil {
+		return derive.Sized{}, err
+	}
+
+	return derive.Sized{
+		Size: int(tmp0),
+	}, nil
+}
+
+type MapperImpl struct{}
+
+var _ derive.Mapper = (*MapperImpl)(nil)
 
 func (m OtherImpl) ToHolder(in *derive.Wrapper) *derive.Holder {
 	if in == nil {
@@ -121,6 +114,13 @@ func (m OtherImpl) ToHolder(in *derive.Wrapper) *derive.Holder {
 
 	return &derive.Holder{
 		Goals: tmp0,
+	}
+}
+
+func (m OtherImpl) mapGoalToGoalProto(in derive.Goal) derive.GoalProto {
+	return derive.GoalProto{
+		Kind:  in.Kind,
+		Count: int32(in.Count),
 	}
 }
 
