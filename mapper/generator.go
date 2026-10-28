@@ -63,6 +63,26 @@ type Generator struct {
 	strictEnums      bool
 	checkedEnumPairs map[string]bool
 	enumProblems     []string
+
+	// the interface being generated, see GenerateInterface
+	iface    *GoInterface
+	implName string
+	// mappings that only hold for the interface being generated, its own methods
+	// and the helpers derived for it, with the mapping each replaced
+	scoped   []scopedMapping
+	derived  derivedHelpers
+	noDerive int
+}
+
+type scopedMapping struct {
+	mapping *TypeMapping
+	prev    *TypeMapping
+}
+
+// addScoped adds a mapping that is taken back once the interface is generated.
+func (m *Generator) addScoped(mapping *TypeMapping) {
+	m.mappings[mapping.types.String()] = mapping
+	m.scoped = append(m.scoped, scopedMapping{mapping: mapping, prev: m.graph.add(mapping)})
 }
 
 func (m *Generator) SetSrcDir(dir string) {
@@ -87,11 +107,20 @@ func (m *Generator) GenerateInterface(in *GoInterface) error {
 	mapperStruct := jen.Type().Id(name).Struct()
 	typeCheck := jen.Var().Id("_").Qual(in.Pkg, in.Name).Op("=").Parens(jen.Op("*").Id(name)).Parens(jen.Nil())
 
+	// methods of this interface's implementation are no converters for the next one
+	m.iface, m.implName, m.derived = in, name, newDerivedHelpers()
+	defer func() {
+		for i := len(m.scoped) - 1; i >= 0; i-- {
+			m.graph.restore(m.scoped[i].mapping, m.scoped[i].prev)
+		}
+		m.iface, m.implName, m.scoped = nil, "", nil
+	}()
+
 	// add type mappings
 	for _, method := range in.Methods {
 		// only handle cases with one input for now
 		if len(method.inputs) == 1 {
-			m.AddTypeMapping(&TypeMapping{
+			m.addScoped(&TypeMapping{
 				types: TypePair{
 					from: method.inputs[0].typ,
 					to:   method.output,
@@ -280,17 +309,31 @@ func (m *Generator) resolveField(f *GoFunction, field *GoField) (*ResolvedMappin
 	found := source == "."
 
 	if source == "." {
-		// special case of referring directly to the input type
-		for _, input := range f.inputs {
-			generator, canFail := m.buildGenerator(input.typ, field.typ)
+		// special case of referring directly to the input type. An input that
+		// converts as a whole wins over one taken apart field by field.
+		for _, derive := range []bool{false, true} {
+			if !derive {
+				m.noDerive++
+			}
 
-			if generator != nil {
-				mapping = &ResolvedMapping{
-					output:    field,
-					input:     jen.Id(input.name),
-					generator: generator,
-					canFail:   canFail,
+			for _, input := range f.inputs {
+				generator, canFail := m.buildGenerator(input.typ, field.typ)
+
+				if generator != nil {
+					mapping = &ResolvedMapping{
+						output:    field,
+						input:     jen.Id(input.name),
+						generator: generator,
+						canFail:   canFail,
+					}
 				}
+			}
+
+			if !derive {
+				m.noDerive--
+			}
+			if mapping != nil {
+				break
 			}
 		}
 
@@ -315,7 +358,12 @@ func (m *Generator) resolveField(f *GoFunction, field *GoField) (*ResolvedMappin
 	}
 
 	if mapping == nil {
-		// If no custom mapper was used and no direct mapping found, try buildGenerator
+		// If no custom mapper was used and no direct mapping found, try buildGenerator.
+		// A whole input is not taken apart field by field without a from:".", the
+		// fields of the target would be filled from wherever their names happen to match
+		m.noDerive++
+		defer func() { m.noDerive-- }()
+
 		for _, input := range f.inputs {
 			generator, canFail := m.buildGenerator(input.typ, field.typ)
 			if generator != nil {
@@ -1043,6 +1091,10 @@ func (m *Generator) buildGenerator(from *GoType, to *GoType) (GeneratorFunc, boo
 		}
 	}
 
+	if gen, canFail := m.deriveConversion(from, to); gen != nil {
+		return gen, canFail
+	}
+
 	// cross-kind conversions (e.g., struct to basic) are not supported
 	return nil, false
 }
@@ -1069,6 +1121,15 @@ func (m *Generator) generateMethod(mapperName string, f *GoFunction) error {
 	if err != nil {
 		return err
 	}
+
+	m.renderMethod(mapperName, f, resolved, canFail)
+
+	return nil
+}
+
+// renderMethod emits a method returning a struct built from resolved.
+func (m *Generator) renderMethod(mapperName string, f *GoFunction, resolved []*ResolvedMapping, canFail bool) {
+	to := f.output
 
 	returnType := jen.Empty()
 	if to.Kind == PointerKind {
@@ -1112,23 +1173,19 @@ func (m *Generator) generateMethod(mapperName string, f *GoFunction) error {
 		returnValue = jen.List(returnValue, jen.Nil())
 	}
 
-	function.Block(body, jen.Return(returnValue)).Line()
+	if body.GoString() == "" {
+		function.Block(jen.Return(returnValue)).Line()
+	} else {
+		function.Block(body, jen.Return(returnValue)).Line()
+	}
 
 	m.file.Add(function)
-
-	return nil
 }
 
 // checkCanFail reports whether any mapping can fail and verifies that the method's
 // signature agrees: an error return exactly when one is needed.
 func checkCanFail(f *GoFunction, resolved []*ResolvedMapping) (bool, error) {
-	canFail := false
-	for _, r := range resolved {
-		if r.canFail {
-			canFail = true
-			break
-		}
-	}
+	canFail := anyCanFail(resolved)
 
 	if canFail && !f.hasError {
 		return false, errors.New("at least one converter can fail, function needs to return error")
@@ -1137,6 +1194,16 @@ func checkCanFail(f *GoFunction, resolved []*ResolvedMapping) (bool, error) {
 	}
 
 	return canFail, nil
+}
+
+func anyCanFail(resolved []*ResolvedMapping) bool {
+	for _, r := range resolved {
+		if r.canFail {
+			return true
+		}
+	}
+
+	return false
 }
 
 // inputParams renders the parameter list of a generated method.

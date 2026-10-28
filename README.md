@@ -447,6 +447,22 @@ func (m *ComplexMapperImpl) MapAToC(a *TypeA) *TypeC {
 
 This graph-based approach allows you to define smaller, focused mapping functions, and the `mapper` will intelligently combine them to achieve more complex transformations.
 
+#### Nested structs
+
+A nested struct needs no method of its own. When nothing converts two named structs, the generator maps them field by field through a helper on the implementation, with the same rules as a declared method and the interface's toggles, and uses it wherever the pair turns up: a field, `*T` → `*U`, `[]T` → `[]*U`, map values, a struct referring to itself:
+
+```go
+// mapper:generate
+type PlanMapper interface {
+	ToProto(in *Plan) *PlanProto // Plan.Goals []Goal → PlanProto.Goals []*GoalProto
+}
+
+// generated
+func (m PlanMapperImpl) mapGoalToGoalProto(in Goal) GoalProto { ... }
+```
+
+Directives cannot reach inside a helper, declare the method when a nested pair needs them. `// field:Key from:"."` builds a struct field out of the input's own fields the same way.
+
 ### 9. Custom Mapper Functions
 
 The `mapper` tool allows you to define and register your own custom mapping functions for specific type conversions. This is useful when the default mapping logic (direct assignment, pointer/slice conversions) is insufficient, and you need to implement custom transformation logic.

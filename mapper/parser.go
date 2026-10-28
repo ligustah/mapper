@@ -163,9 +163,10 @@ func (p *Parser) parsePackage(pkg *packages.Package) []*GoInterface {
 
 				if hasGenerateDirective {
 					goIface := &GoInterface{
-						Name: typ.Obj().Name(),
-						Pkg:  typ.Obj().Pkg().Path(),
-						Type: iface,
+						Name:          typ.Obj().Name(),
+						Pkg:           typ.Obj().Pkg().Path(),
+						Type:          iface,
+						skipUnmatched: slices.Contains(toggles, skipUnmatchedDirective),
 					}
 
 					for i := 0; i < iface.NumMethods(); i++ {

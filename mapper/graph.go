@@ -98,7 +98,8 @@ func (t *TypeGraph) getMapping(from, to *GoType) []*TypeMapping {
 	return mappings
 }
 
-func (t *TypeGraph) add(mapping *TypeMapping) {
+// add registers mapping and returns the one it replaces, nil if there was none.
+func (t *TypeGraph) add(mapping *TypeMapping) *TypeMapping {
 	fromIdx := t.storeTypIndex(mapping.types.from)
 	toIdx := t.storeTypIndex(mapping.types.to)
 
@@ -108,7 +109,24 @@ func (t *TypeGraph) add(mapping *TypeMapping) {
 		t.mappers[fromIdx] = make(map[int]*TypeMapping)
 	}
 
+	prev := t.mappers[fromIdx][toIdx]
 	t.mappers[fromIdx][toIdx] = mapping
+
+	return prev
+}
+
+// restore undoes the add of mapping, putting back prev, what that add returned.
+func (t *TypeGraph) restore(mapping, prev *TypeMapping) {
+	fromIdx := t.typeIndex[mapping.types.from.String()]
+	toIdx := t.typeIndex[mapping.types.to.String()]
+
+	if prev != nil {
+		t.mappers[fromIdx][toIdx] = prev
+		return
+	}
+
+	delete(t.mappers[fromIdx], toIdx)
+	t.graph.Delete(fromIdx, toIdx)
 }
 
 func NewTypeGraph() *TypeGraph {

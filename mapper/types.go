@@ -90,6 +90,9 @@ type GoInterface struct {
 	Pkg     string
 	Type    *types.Interface
 	Methods []*GoFunction
+	// skipUnmatched is the interface's own mapper:skip-unmatched, which also holds
+	// for the struct conversions derived for it
+	skipUnmatched bool
 }
 
 type GoFunction struct {

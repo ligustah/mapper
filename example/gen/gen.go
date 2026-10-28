@@ -119,7 +119,6 @@ func (m AdvancedMapperImpl) MapCustomConvertReverse(src *protos.CustomConvertExa
 }
 
 func (m AdvancedMapperImpl) MapDetail(detail models.Detail) protos.DetailProto {
-
 	return protos.DetailProto{
 		Note:   detail.Note,
 		Weight: int32(detail.Weight),

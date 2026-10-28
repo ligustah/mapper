@@ -99,6 +99,25 @@ purpose: `int` ↔ `float64` or `string` ↔ `int` still need an explicit conver
 `time.Duration` takes no part in any of these: a plain conversion would carry
 nanoseconds into an integer that usually counts seconds or milliseconds.
 
+### Derived Struct Conversions
+
+Two named structs that nothing else converts are mapped field by field through a
+helper method on the implementation, `func (m XImpl) mapGoalToGoalProto(in Goal) GoalProto`,
+generated once per interface and then used like any converter: for a nested field,
+`*T` → `*U`, `[]T` → `[]*U`, map values and so on. The helper follows the same field
+rules as a declared method and the interface's own toggles, it takes no directives;
+a pair whose fields do not line up still needs a declared method. It returns an
+error when one of its fields can fail. A struct that refers to itself, a tree, calls
+its own helper. Derivation only fills in where the generator would otherwise have
+failed: a declared method, a registered converter or a direct conversion always
+wins, and the fallback that converts a whole input into a field without a source
+never takes a struct apart, only an explicit `from:"."` does.
+
+Converters coming from an interface's own methods and its derived helpers are
+scoped to that interface, `GenerateInterface` takes them back out of the graph when
+it is done, so a second interface never calls a method of the first one's
+implementation.
+
 ### Nil Pointers
 
 A generated method whose only input is a pointer opens with a nil guard: nil in
